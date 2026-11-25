@@ -8,6 +8,12 @@ spring:
     console:
       enabled: true
 
+# Local development only. The inspection service falls back to the same value when JWT_SECRET is unset, so
+# sign-in works across both services without any setup.
+register:
+  security:
+    jwt-secret: "${JWT_SECRET:local-development-only-secret-do-not-deploy}"
+
 springdoc:
   api-docs:
     enabled: true

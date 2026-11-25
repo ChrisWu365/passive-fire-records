@@ -81,6 +81,19 @@ kubectl -n "${NAMESPACE}" create secret docker-registry ghcr-credentials \
   --docker-password="${GHCR_TOKEN}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# The register service and the inspection API both read the token signing secret from this Secret, so it
+# must exist before either Deployment is applied.
+if [ -z "${JWT_SECRET:-}" ]; then
+  echo "JWT_SECRET must be provided for the inspection API and the register service." >&2
+  exit 1
+fi
+kubectl -n "${NAMESPACE}" create secret generic inspection-secrets \
+  --from-literal=jwt-secret="${JWT_SECRET}" \
+  --from-literal=ai-api-key="${AI_API_KEY:-}" \
+  --from-literal=ai-provider-url="${AI_PROVIDER_URL:-}" \
+  --from-literal=ai-model="${AI_MODEL:-}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 sed "s|product-crud:replace-me|${IMAGE_REF}|g; s|__SPRING_PROFILE__|${SPRING_PROFILE}|g; s|namespace: product-crud|namespace: ${NAMESPACE}|g" \
   "${MANIFEST_DIR}/product-crud-deployment.yml" | kubectl apply -n "${NAMESPACE}" -f -
 sed "s|namespace: product-crud|namespace: ${NAMESPACE}|g" \
@@ -90,20 +103,10 @@ if [ -z "${INSPECTION_API_IMAGE}" ] || [ -z "${INSPECTION_WEB_IMAGE}" ]; then
   echo "Inspection API and web image references are required." >&2
   exit 1
 fi
-if [ -z "${JWT_SECRET:-}" ]; then
-  echo "JWT_SECRET must be provided for the inspection API." >&2
-  exit 1
-fi
 if [ ! -f "${MANIFEST_DIR}/inspection.yml" ]; then
   echo "Inspection Kubernetes manifest not found: ${MANIFEST_DIR}/inspection.yml" >&2
   exit 1
 fi
-kubectl -n "${NAMESPACE}" create secret generic inspection-secrets \
-  --from-literal=jwt-secret="${JWT_SECRET}" \
-  --from-literal=ai-api-key="${AI_API_KEY:-}" \
-  --from-literal=ai-provider-url="${AI_PROVIDER_URL:-}" \
-  --from-literal=ai-model="${AI_MODEL:-}" \
-  --dry-run=client -o yaml | kubectl apply -f -
 sed "s|inspection-api:replace-me|${INSPECTION_API_IMAGE}|g; s|inspection-web:replace-me|${INSPECTION_WEB_IMAGE}|g; s|namespace: product-crud|namespace: ${NAMESPACE}|g" \
   "${MANIFEST_DIR}/inspection.yml" | kubectl apply -n "${NAMESPACE}" -f -
 kubectl -n "${NAMESPACE}" rollout restart deployment inspection-api

@@ -143,10 +143,18 @@ record was stored. Demo users stay in code.
   `name`, `role`; 8-hour lifetime).
 - The register service validates the same token with the same `JWT_SECRET` and
   maps `role` to an authority.
-- `JWT_SECRET` must be at least 32 bytes; the Java HS256 decoder rejects
-  shorter keys. The Node development fallback
-  (`development-only-change-me`) is too short and must be replaced with a
-  longer one shared by both services' local configuration.
+- Reads on `/api/register/**` need any of the three roles; writes need
+  `ADMIN`. A valid token with a missing or unknown role gets 403.
+- Open without a token: `/actuator/health/**`, `/actuator/prometheus`, and the
+  API documentation in the profiles where it is enabled.
+- Error bodies match the inspection service: 401 "Authentication required"
+  (no token), 401 "Invalid or expired token", 403 "Insufficient permissions".
+- `JWT_SECRET` must be at least 32 bytes. Outside the `local` profile the
+  register service refuses to start without one.
+- For local development both services fall back to the same built-in value
+  when `JWT_SECRET` is unset, so sign-in works across them with no setup.
+- In Kubernetes both Deployments read the secret from `inspection-secrets`,
+  which the deploy script creates before applying either.
 
 ## Supabase PostgreSQL
 

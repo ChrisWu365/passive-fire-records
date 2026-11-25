@@ -7,6 +7,7 @@ services:
     container_name: product-crud
     environment:
       SPRING_PROFILES_ACTIVE: prod
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to the secret the inspection API signs tokens with (at least 32 bytes)}
     ports:
       - "8080:8080"
     restart: unless-stopped

@@ -29,6 +29,12 @@ if [ -z "${GHCR_USERNAME:-}" ] || [ -z "${GHCR_TOKEN:-}" ]; then
   exit 1
 fi
 
+if [ -z "${JWT_SECRET:-}" ]; then
+  echo "JWT_SECRET must be provided: the register service verifies tokens signed with it." >&2
+  exit 1
+fi
+export JWT_SECRET
+
 printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io \
   --username "${GHCR_USERNAME}" \
   --password-stdin

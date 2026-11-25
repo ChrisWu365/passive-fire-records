@@ -39,6 +39,12 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: __SPRING_PROFILE__
+            # The same secret the inspection API signs tokens with; the register service verifies them.
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: inspection-secrets
+                  key: jwt-secret
           readinessProbe:
             httpGet:
               path: /actuator/health/readiness

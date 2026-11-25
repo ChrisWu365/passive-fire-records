@@ -23,6 +23,12 @@ spring:
         default_schema: register
     open-in-view: false
 
+# The secret the inspection service signs tokens with. There is no default outside the local profile: the
+# service refuses to start without a secret of at least 32 bytes.
+register:
+  security:
+    jwt-secret: "${JWT_SECRET:}"
+
 server:
   port: 8080
 

@@ -2,7 +2,9 @@ import jwt from 'jsonwebtoken';
 import type { NextFunction, Request, Response } from 'express';
 import type { Role, User } from './types.js';
 
-const jwtSecret = process.env.JWT_SECRET ?? 'development-only-change-me';
+// Local development fallback. The register service's local profile uses the same value, and it must stay at
+// least 32 bytes long because the register service rejects shorter HS256 secrets.
+const jwtSecret = process.env.JWT_SECRET ?? 'local-development-only-secret-do-not-deploy';
 
 export interface AuthenticatedRequest extends Request {
   user?: Pick<User, 'id' | 'email' | 'name' | 'role'>;

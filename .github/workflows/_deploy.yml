@@ -139,14 +139,16 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GHCR_PULL_TOKEN || secrets.GITHUB_TOKEN }}
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           PROMETHEUS_TARGET: host.docker.internal:8080
+          JWT_SECRET: ${{ secrets.INSPECTION_JWT_SECRET }}
         with:
           host: ${{ secrets.DOCKER_VM_IP }}
           username: ${{ secrets.DOCKER_VM_USER }}
           key: ${{ secrets.DOCKER_VM_KEY }}
           port: 22
-          envs: APP_DIR,IMAGE_REF,GHCR_USERNAME,GHCR_TOKEN,GRAFANA_ADMIN_PASSWORD,PROMETHEUS_TARGET
+          envs: APP_DIR,IMAGE_REF,GHCR_USERNAME,GHCR_TOKEN,GRAFANA_ADMIN_PASSWORD,PROMETHEUS_TARGET,JWT_SECRET
           script: |
-            bash "${APP_DIR}/scripts/docker/deploy-docker.sh" "${APP_DIR}" "${IMAGE_REF}"
+            JWT_SECRET="${JWT_SECRET}" \
+              bash "${APP_DIR}/scripts/docker/deploy-docker.sh" "${APP_DIR}" "${IMAGE_REF}"
             sudo -n env GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD}" \
               PROMETHEUS_TARGET="${PROMETHEUS_TARGET}" \
               bash "${APP_DIR}/scripts/monitoring/deploy-monitoring.sh" "${APP_DIR}"
