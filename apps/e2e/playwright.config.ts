@@ -5,6 +5,10 @@ const isCI = !!process.env.CI;
 const REGISTER_URL = 'http://localhost:8080';
 const INSPECTION_API_URL = 'http://localhost:4000';
 const WEB_URL = 'http://localhost:5173';
+// The built web app, served by "vite preview". Only the build has the service worker that lets the app
+// open with no network, so the offline tests run against it instead of the dev server.
+const BUILT_WEB_URL = 'http://localhost:4173';
+const OFFLINE_TESTS = '**/*.offline.spec.ts';
 
 // PostgreSQL for the inspection service. Locally this defaults to the local Supabase stack; CI sets
 // E2E_DATABASE_URL to its service container. The end-to-end run keeps its records in a schema of its own,
@@ -55,21 +59,38 @@ export default defineConfig({
       reuseExistingServer: !isCI,
       timeout: 120_000,
     },
+    {
+      command: 'npm --prefix ../inspection-web run build && npm --prefix ../inspection-web run preview -- --port 4173 --strictPort',
+      url: BUILT_WEB_URL,
+      reuseExistingServer: !isCI,
+      timeout: 180_000,
+    },
   ],
 
   projects: [
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: OFFLINE_TESTS,
     },
     {
       name: 'firefox',
       use: { ...devices['Desktop Firefox'] },
       testMatch: '**/*.spec.ts',
+      testIgnore: OFFLINE_TESTS,
     },
     {
       name: 'webkit',
       use: { ...devices['Desktop Safari'] },
+      testIgnore: OFFLINE_TESTS,
+    },
+    {
+      // Offline behaviour: the built app with its service worker, with the network switched off mid-test.
+      // Chromium only: Playwright's support for service workers and offline emulation is complete there,
+      // and not in its Firefox and WebKit builds.
+      name: 'offline',
+      use: { ...devices['Desktop Chrome'], baseURL: BUILT_WEB_URL },
+      testMatch: OFFLINE_TESTS,
     },
   ],
 });

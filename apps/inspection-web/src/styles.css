@@ -40,3 +40,11 @@ h1, h2, h3, p { margin-top: 0; }
 .project-list { list-style: none; margin: 0; padding: 8px; } .project-item { width: 100%; text-align: left; background: none; border: 1px solid transparent; border-radius: 9px; padding: 10px 12px; } .project-item:hover { background: #f4f8f8; } .project-item.selected { background: #e4f4f0; border-color: #b9e1d7; }
 @media (max-width: 900px) { .register-layout { grid-template-columns: 1fr; } }
 @media print { .system-details { border: 0; padding: 0; background: none; } }
+.offline-panel { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px 18px; background: #fff; border: 1px solid #e1e7e9; border-radius: 12px; padding: 12px 18px; margin-bottom: 18px; font-size: .86rem; }
+.offline-summary, .offline-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.offline-panel .alert { flex-basis: 100%; margin: 0; }
+.connectivity { border-radius: 999px; padding: 4px 10px; font-size: .72rem; font-weight: 800; } .connectivity.online { background: #dcf4eb; color: #167052; } .connectivity.offline { background: #fff0df; color: #a45916; }
+.alert.offline { background: #fff6e8; color: #8a4b12; }
+.offline-note { background: #fff6e8; color: #8a4b12; border-radius: 8px; padding: 10px 12px; font-size: .84rem; }
+.button:disabled { opacity: .55; cursor: not-allowed; }
+@media print { .offline-panel, .offline-note { display: none !important; } }

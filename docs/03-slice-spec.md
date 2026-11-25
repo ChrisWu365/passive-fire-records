@@ -217,6 +217,13 @@ test for admin-adds-system then installer-uses-it.
 - **AC-5.4** Offline, pages that need the network say so plainly; they do not show a
   generic error.
 
+The pickers read the register whenever it can be reached, and the device's
+downloaded copy only when it cannot (no connection, or a 502, 503 or 504 from
+the gateway). Other failures, such as an expired sign-in, are shown as errors
+and never hidden behind the downloaded copy. When the downloaded copy is in
+use, the form says so and shows when it was downloaded. A download that fails
+leaves the earlier copy untouched.
+
 **Tests:** unit tests for the local store; Playwright test using the browser's
 offline mode.
 

@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { useApi } from '../api/api-context';
 import {
   STATUSES,
@@ -11,6 +11,8 @@ import {
 } from '../api/types';
 import { Field } from '../components/Field';
 import { ErrorAlert, messageOf, StatusMessage } from '../components/feedback';
+import { useOffline } from '../offline/offline-context';
+import { createLiveReferenceData, createOfflineReferenceData, type ReferenceSource } from '../offline/reference-data';
 import { AiDraftNote } from './AiDraftNote';
 import { ObservationsEditor } from './ObservationsEditor';
 import { PhotoSection } from './PhotoSection';
@@ -56,6 +58,14 @@ function inputFrom(record: Inspection): InspectionInput {
  */
 export function InspectionForm({ initial, canEdit, onClose, onSaved }: InspectionFormProps) {
   const api = useApi();
+  const offline = useOffline();
+  /** Projects and systems for the pickers: the live register, or the downloaded copy when it is unreachable. */
+  const reference = useMemo(
+    () => (offline
+      ? createOfflineReferenceData(api.register, offline.snapshotStore)
+      : createLiveReferenceData(api.register)),
+    [api, offline]
+  );
   const titleId = useId();
   /** The record as last stored by the server; null until a new record has been saved once. */
   const [record, setRecord] = useState<Inspection | null>(initial);
@@ -66,29 +76,43 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  /** Set when the pickers show the device's downloaded copy; holds when that copy was downloaded. */
+  const [downloadedAt, setDownloadedAt] = useState<string | null>(null);
+
+  const noteSource = (source: ReferenceSource) => {
+    if (source.kind === 'downloaded') setDownloadedAt(source.downloadedAt);
+  };
 
   useEffect(() => {
     let cancelled = false;
-    api.register.listProjects()
-      .then((loaded) => { if (!cancelled) setProjects(loaded); })
+    reference.listProjects()
+      .then((loaded) => {
+        if (cancelled) return;
+        setProjects(loaded.items);
+        setDownloadedAt(loaded.source.kind === 'downloaded' ? loaded.source.downloadedAt : null);
+      })
       .catch((failure: unknown) => {
         if (!cancelled) setError(`The projects could not be loaded. ${messageOf(failure, '')}`.trim());
       });
     return () => { cancelled = true; };
-  }, [api]);
+  }, [reference]);
 
   const projectId = form.projectId;
   useEffect(() => {
     setSystems([]);
     if (!projectId) return undefined;
     let cancelled = false;
-    api.register.listSystems(projectId)
-      .then((loaded) => { if (!cancelled) setSystems(loaded); })
+    reference.listSystems(projectId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setSystems(loaded.items);
+        noteSource(loaded.source);
+      })
       .catch((failure: unknown) => {
         if (!cancelled) setError(`The firestop systems could not be loaded. ${messageOf(failure, '')}`.trim());
       });
     return () => { cancelled = true; };
-  }, [api, projectId]);
+  }, [reference, projectId]);
 
   const patch = (change: Partial<InspectionInput>) => setForm((current) => ({ ...current, ...change }));
   const keepsStoredReference = record !== null
@@ -177,6 +201,12 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
         </div>
         <ErrorAlert message={error} />
         <StatusMessage message={message} />
+        {downloadedAt && (
+          <p className="offline-note">
+            Offline: showing the register as downloaded to this device on{' '}
+            <time dateTime={downloadedAt}>{new Date(downloadedAt).toLocaleString()}</time>.
+          </p>
+        )}
 
         <div className="form-grid">
           <Field label="Project">

@@ -219,19 +219,41 @@ SQLite is the only offline data store.
 
 **SQLite in the browser.** The official SQLite WebAssembly build, run in a web
 worker, stored in the browser's private file system (OPFS) using the
-`opfs-sahpool` storage option, which needs no special response headers.
+`opfs-sahpool` storage option, which needs no special response headers. The
+rest of the app sees only a small `SqlDatabase` interface (query, and a batch of
+statements in one transaction), so the same store code runs against an
+in-memory SQLite in unit tests.
+
+**When the device database is unavailable.** The pooled storage gives the file
+to one worker at a time, so a second tab of the app cannot open it, and some
+browsers do not support it at all. The app then starts without offline
+services: no offline panel, and everything needs the network. Nothing else
+changes.
+
+**Online first.** The pickers on a record read the live register whenever it
+can be reached. They read the downloaded copy only when it cannot: no
+connection, or a 502, 503 or 504 from the gateway. Any other failure, such as an
+expired sign-in, is shown as an error and never hidden behind the downloaded
+copy. When the downloaded copy is in use, the form says so and shows when it
+was downloaded.
 
 **Local tables**
 
 | Table | Purpose |
 | --- | --- |
-| `project`, `firestop_system` | The last downloaded snapshot |
-| `meta` | `snapshot_generated_at` and similar |
+| `snapshot_project`, `snapshot_system` | The last downloaded snapshot: active projects and their active systems |
+| `snapshot_meta` | One row: when the register generated the snapshot, and when the device downloaded it |
 | `queued_inspection` | `client_id` PK, form fields, `ai_instruction`, `captured_at`, `state`, `step`, `server_id`, `last_error` |
 | `queued_photo` | `id` PK, `client_id`, image bytes, `mime_type`, `file_name`, `uploaded` |
 
-**Download.** `GET /api/register/snapshot`, then replace the local `project` and
-`firestop_system` rows in one transaction.
+**Download.** `GET /api/register/snapshot`, check that the answer is shaped like
+a snapshot, then replace the three snapshot tables in one transaction. If the
+request, the check or the write fails, the earlier copy is untouched. The
+download button is disabled while the device is offline.
+
+**Pages that need the network.** Offline, the inspections list and the register
+page show a notice that they need a connection, not an error, and load by
+themselves when the connection returns.
 
 **Sync queue.** Runs on the browser's `online` event, on app start, and from a
 "Sync now" button. Browser background sync is not used because Safari and
@@ -306,6 +328,12 @@ mock draft.
 
 ## Risks
 
+- **Offline use is tested by automation in Chromium only.** The offline
+  end-to-end tests need a service worker with the network switched off, which
+  Playwright supports fully only in Chromium. A manual probe showed the device
+  database also works in Playwright's Firefox, and does not open in Playwright's
+  WebKit on Windows, where the app falls back to online-only. Real Safari has
+  not been tried.
 - **Offline mode needs HTTPS.** Service workers and the browser's private file
   system work only on HTTPS or `localhost`. The deployed web app is plain HTTP
   on `http://<VM_IP>:30173`, so offline mode will not work there until TLS is

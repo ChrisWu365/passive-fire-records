@@ -6,17 +6,27 @@ import type { Session, User } from './api/types';
 import { Login } from './auth/Login';
 import { clearSession, readToken, readUser, saveSession } from './auth/session';
 import { InspectionsPage } from './inspections/InspectionsPage';
+import { OfflineProvider, type OfflineServices } from './offline/offline-context';
 import { RegisterAdminPage } from './register/RegisterAdminPage';
 
 type View = 'inspections' | 'register';
 
-/** `api` lets tests replace the HTTP client; the running app leaves it out. */
-export function App({ api }: { api?: Api } = {}) {
+export interface AppProps {
+  /** Lets tests replace the HTTP client; the running app leaves it out. */
+  api?: Api;
+  /** The services for working without a network. Left out, every screen needs the network. */
+  offline?: OfflineServices;
+}
+
+export function App({ api, offline }: AppProps = {}) {
   const resolvedApi = useMemo(
     () => api ?? createHttpApi({ baseUrl: import.meta.env.VITE_API_URL ?? '', getToken: readToken }),
     [api]
   );
-  return <ApiProvider api={resolvedApi}><Workspace /></ApiProvider>;
+  const workspace = offline
+    ? <OfflineProvider services={offline}><Workspace /></OfflineProvider>
+    : <Workspace />;
+  return <ApiProvider api={resolvedApi}>{workspace}</ApiProvider>;
 }
 
 function Workspace() {

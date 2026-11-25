@@ -1,10 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApi } from '../api/api-context';
 import type { FirestopSystem, FirestopSystemInput, Project, ProjectInput } from '../api/types';
 import { ErrorAlert, messageOf } from '../components/feedback';
+import { OfflineNotice } from '../offline/OfflineNotice';
+import { useOffline } from '../offline/offline-context';
+import { isNetworkFailure } from '../offline/reachability';
+import { useOnline } from '../offline/use-online';
 import { ProjectPanel } from './ProjectPanel';
 import { SystemForm } from './SystemForm';
 import { SystemTable } from './SystemTable';
+
+const NEEDS_CONNECTION = 'You are offline. The register can be viewed and changed only while online.';
 
 function byCode<T extends { code: string }>(left: T, right: T): number {
   return left.code.localeCompare(right.code);
@@ -30,6 +36,10 @@ function systemInput(system: FirestopSystem, active: boolean): FirestopSystemInp
  */
 export function RegisterAdminPage() {
   const { register } = useApi();
+  const connectivity = useOffline()?.connectivity;
+  const online = useOnline();
+  /** True when the projects could not load because the device has no connection; not an error to fix. */
+  const [waitingForConnection, setWaitingForConnection] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [systems, setSystems] = useState<FirestopSystem[]>([]);
@@ -41,14 +51,24 @@ export function RegisterAdminPage() {
     setLoadError('');
     try {
       setProjects((await register.listProjects()).sort(byCode));
+      setWaitingForConnection(false);
     } catch (failure) {
-      setLoadError(messageOf(failure, 'The projects could not be loaded'));
+      const offline = isNetworkFailure(failure) && connectivity !== undefined && !connectivity.isOnline();
+      setWaitingForConnection(offline);
+      setLoadError(offline ? '' : messageOf(failure, 'The projects could not be loaded'));
     }
-  }, [register]);
+  }, [register, connectivity]);
 
   useEffect(() => {
     void loadProjects();
   }, [loadProjects]);
+
+  // When the connection comes back, load what could not be loaded while it was away.
+  const wasOnline = useRef(online);
+  useEffect(() => {
+    if (online && !wasOnline.current) void loadProjects();
+    wasOnline.current = online;
+  }, [online, loadProjects]);
 
   useEffect(() => {
     setSystems([]);
@@ -113,6 +133,7 @@ export function RegisterAdminPage() {
       <ErrorAlert message={loadError}>
         {' '}<button type="button" className="button link" onClick={() => void loadProjects()}>Try again</button>
       </ErrorAlert>
+      {waitingForConnection && <OfflineNotice message={NEEDS_CONNECTION} />}
       <div className="register-layout">
         <ProjectPanel projects={projects} selectedId={selectedId} onSelect={setSelectedId} onCreate={createProject} />
         <section className="panel register-panel">
