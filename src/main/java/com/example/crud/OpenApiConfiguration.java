@@ -11,11 +11,11 @@ import org.springframework.context.annotation.Profile;
 public class OpenApiConfiguration {
 
     @Bean
-    public OpenAPI productCrudOpenAPI() {
+    public OpenAPI registerOpenAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Product CRUD API")
+                        .title("Passive Fire Register API")
                         .version("v1")
-                        .description("REST API for managing products"));
+                        .description("REST API for projects and their approved firestop systems"));
     }
 }

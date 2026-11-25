@@ -2,7 +2,7 @@
 <FindBugsFilter>
     <!-- Spring constructor injection stores framework-managed dependencies by design. -->
     <Match>
-        <Class name="com.example.crud.product.ProductController"/>
+        <Class name="~com\.example\.crud\.register\..*(Controller|Service)"/>
         <Bug pattern="EI_EXPOSE_REP2"/>
     </Match>
 </FindBugsFilter>

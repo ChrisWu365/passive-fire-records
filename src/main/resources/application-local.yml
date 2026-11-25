@@ -1,3 +1,13 @@
+# Always the in-memory database, whatever REGISTER_DB_* says.
+spring:
+  datasource:
+    url: "jdbc:h2:mem:registerdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1"
+    username: sa
+    password: ""
+  h2:
+    console:
+      enabled: true
+
 springdoc:
   api-docs:
     enabled: true

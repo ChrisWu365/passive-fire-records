@@ -1,18 +1,27 @@
 spring:
+  config:
+    # Optional local file holding REGISTER_DB_* values; see .env.example. Deployed environments set real
+    # environment variables instead.
+    import: "optional:file:.env[.properties]"
   profiles:
     default: local
   datasource:
-    url: jdbc:h2:mem:cruddb;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password:
+    # Without REGISTER_DB_* the service falls back to an in-memory database, so it still starts.
+    url: "${REGISTER_DB_URL:jdbc:h2:mem:registerdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1}"
+    username: "${REGISTER_DB_USERNAME:sa}"
+    password: "${REGISTER_DB_PASSWORD:}"
+    hikari:
+      maximum-pool-size: 5
+  flyway:
+    default-schema: register
+    schemas: register
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: register
     open-in-view: false
-  h2:
-    console:
-      enabled: true
 
 server:
   port: 8080
@@ -29,7 +38,7 @@ management:
 
 logging:
   level:
-    com.example.crud.product: INFO
+    com.example.crud.register: INFO
 
 springdoc:
   api-docs:
