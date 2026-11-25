@@ -53,7 +53,7 @@ test.describe('Inspection Application E2E Tests', () => {
 
     await expect(page.getByText('Total inspections')).toBeVisible();
     await expect(page.getByText('Action required').first()).toBeVisible();
-    await expect(page.getByText('Completed')).toBeVisible();
+    await expect(page.getByText('Completed', { exact: true })).toBeVisible();
   });
 
   test('should show inspection list table', async ({ page }: { page: Page }) => {
@@ -62,7 +62,7 @@ test.describe('Inspection Application E2E Tests', () => {
     await page.getByRole('button', { name: 'Sign in' }).click();
 
     await expect(page.getByText('Recent inspections')).toBeVisible();
-    await expect(page.getByText('Building / location')).toBeVisible();
+    await expect(page.getByText('Project / location')).toBeVisible();
     await expect(page.getByText('Status')).toBeVisible();
     await expect(page.getByRole('columnheader', { name: 'Inspector' })).toBeVisible();
   });
