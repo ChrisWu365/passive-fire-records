@@ -5,6 +5,8 @@ services:
     environment:
       NODE_ENV: production
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET before starting the inspection demo}
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to a PostgreSQL connection string the container can reach}
+      REGISTER_SERVICE_URL: ${REGISTER_SERVICE_URL:-http://host.docker.internal:8080}
       AI_PROVIDER_URL: ${AI_PROVIDER_URL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}

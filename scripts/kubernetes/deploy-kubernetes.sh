@@ -87,8 +87,13 @@ if [ -z "${JWT_SECRET:-}" ]; then
   echo "JWT_SECRET must be provided for the inspection API and the register service." >&2
   exit 1
 fi
+if [ -z "${INSPECTION_DATABASE_URL:-}" ]; then
+  echo "INSPECTION_DATABASE_URL must be provided: the inspection API stores its records in PostgreSQL." >&2
+  exit 1
+fi
 kubectl -n "${NAMESPACE}" create secret generic inspection-secrets \
   --from-literal=jwt-secret="${JWT_SECRET}" \
+  --from-literal=database-url="${INSPECTION_DATABASE_URL}" \
   --from-literal=ai-api-key="${AI_API_KEY:-}" \
   --from-literal=ai-provider-url="${AI_PROVIDER_URL:-}" \
   --from-literal=ai-model="${AI_MODEL:-}" \

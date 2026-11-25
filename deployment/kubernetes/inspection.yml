@@ -84,6 +84,14 @@ spec:
                 secretKeyRef:
                   name: inspection-secrets
                   key: jwt-secret
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: inspection-secrets
+                  key: database-url
+            # The register service inside the cluster; the call never leaves it.
+            - name: REGISTER_SERVICE_URL
+              value: http://product-crud:8080
             - name: AI_API_KEY
               valueFrom:
                 secretKeyRef:

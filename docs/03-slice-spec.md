@@ -149,7 +149,26 @@ Move the Node service off the JSON file and make it depend on the register.
   stored.
 - **AC-3.4** Posting the same `clientId` twice returns the same record and stores one row.
 - **AC-3.5** Editing a system in the register afterwards does not change existing records.
-- **AC-3.6** Records and photo references survive a restart.
+- **AC-3.6** Records and photo references survive a restart. The schema is
+  created and migrated on start, safely when several instances start at once.
+- **AC-3.7** Invalid input (missing or malformed ids, blank location, unknown
+  status, over-long notes, bad capture time or `clientId`) returns 400 with a
+  message, without asking the register and without storing anything.
+- **AC-3.8** Role rules are unchanged: no token gives 401; a viewer can read
+  but not create or update; only an admin can delete; unknown records give 404.
+- **AC-3.9** Requesting an AI draft stores the instruction and the draft and
+  sets the AI status to `DONE`. If the provider fails, the answer is 502, the
+  AI status is `FAILED`, and the rest of the record is untouched. A draft
+  never changes the record's status.
+- **AC-3.10** Photo upload, download and removal keep working, with the photo
+  references stored on the record.
+
+An update that keeps the same project and system does not call the register,
+so records stay editable while the register is down. A repeated `clientId` is
+answered from the stored record before the register is asked. The 422 reasons
+are "Project not found", "Project is inactive", "Firestop system not found in
+this project" and "Firestop system is inactive"; the 503 message is "The
+register service is unavailable. Try again later."
 
 **Tests:** API tests with the register call stubbed for the success, 404,
 inactive, timeout and duplicate-`clientId` cases; store tests against a real

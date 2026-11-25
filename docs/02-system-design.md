@@ -101,18 +101,28 @@ Errors use one JSON shape, `{ "error": "..." }`, matching the Node service:
 
 ## Inspection service (Node)
 
-**Stack additions:** `pg` and plain SQL migration files. A store interface with
-a PostgreSQL implementation replaces the JSON file; API tests can use an
-in-memory implementation, and the PostgreSQL one is tested against a real
-database in CI.
+**Stack additions:** `pg`. A store interface with a PostgreSQL implementation
+replaces the JSON file; the API tests use an in-memory test double, and the
+PostgreSQL implementation is tested against a real database locally and in CI.
+
+**Structure.** `server.ts` only reads the configuration and wires real
+dependencies into `createApp`. The rules live in `InspectionService`, which
+depends on three interfaces: `InspectionStore`, `RegisterClient` and
+`AiDraftGenerator`. HTTP routes validate input and translate domain errors to
+status codes; they hold no rules.
+
+**Migrations.** The schema's SQL is kept in code (`database/migrations.ts`) so
+it ships in the build output. On start the service takes a database advisory
+lock, creates the schema if needed, and applies whatever has not been applied,
+so several instances can start together. There is no seed record.
 
 **Tables (schema `inspection`)**
 
 | Table | Columns |
 | --- | --- |
 | `inspection` | `id` uuid PK, `client_id` uuid unique nullable, `project_id`, `project_name`, `system_id`, `system_code`, `system_substrate`, `system_service_type`, `system_fire_rating`, `system_materials`, `system_method`, `location`, `notes`, `status`, `inspector_id`, `inspector_name`, `ai_instruction`, `ai_summary`, `ai_status` (`NONE`, `DONE`, `FAILED`), `captured_at`, `created_at`, `updated_at` |
-| `observation` | `id` uuid PK, `inspection_id` FK, `description`, `severity`, `remedial_action` |
-| `photo` | `id` uuid PK, `inspection_id` FK, `file_path`, `mime_type`, `created_at` |
+| `observation` | `inspection_id` FK, `id`, `position`, `description`, `severity`, `remedial_action`; primary key (`inspection_id`, `id`) |
+| `photo` | `inspection_id` FK, `position`, `file_path`; primary key (`inspection_id`, `position`) |
 
 `project_id` and `system_id` are not database foreign keys; they refer to
 another service's data. The `system_*` columns are the copy taken when the
@@ -127,15 +137,24 @@ record was stored. Demo users stay in code.
   the existing record.
 - `POST /api/inspections/{id}/ai-summary` stores the instruction and sets
   `ai_status`.
-- Photo deletion should move from array index to photo id.
+- Photos are still a list of paths on the record, removed by position.
+- An unknown `status` is rejected with 400; it used to be saved as `DRAFT`.
+- A create whose `clientId` is already stored is answered from the stored
+  record before the register is asked, so a retry works during a register
+  outage. An update that keeps the same project and system does not call the
+  register either.
 
 **Call to the register service**
 
-- `GET {REGISTER_SERVICE_URL}/api/register/projects/{projectId}/systems/{systemId}`,
-  forwarding the caller's bearer token, with a short timeout (about 3 seconds).
-- 200 and active: continue and copy the details.
+- Two requests, made together, forwarding the caller's bearer token, each with
+  a timeout (3 seconds by default, `REGISTER_TIMEOUT_MS`):
+  `GET {REGISTER_SERVICE_URL}/api/register/projects/{projectId}` and
+  `GET .../projects/{projectId}/systems/{systemId}`. The project is fetched for
+  its name and its active flag.
+- Both 200 and active: continue and copy the project name and system details.
 - 404 or inactive: respond 422 with the reason.
-- Timeout, connection error or 5xx: respond 503. Nothing is stored.
+- Timeout, connection error, any other status, or an unreadable body: respond
+  503. Nothing is stored.
 
 ## Authentication
 
@@ -222,8 +241,12 @@ offline with whatever token it has; it only matters at sync time.
 | --- | --- | --- |
 | `REGISTER_DB_URL`, `REGISTER_DB_USERNAME`, `REGISTER_DB_PASSWORD` | Register | Supabase connection, `register` role. Read from real environment variables, or from an optional `.env` file in the working directory (template: `.env.example`). When unset, the service starts on an in-memory database. The `local` and `test` profiles always use the in-memory database |
 | `JWT_SECRET` | Both | Shared token signing key |
-| `DATABASE_URL` | Inspection | Supabase connection, `inspection` role |
-| `REGISTER_SERVICE_URL` | Inspection | Internal address of the register service (`http://product-crud:8080` in Kubernetes) |
+| `DATABASE_URL` | Inspection | PostgreSQL connection string; required. For hosted Supabase use the session pooler and add `sslmode=require&uselibpqcompat=true` |
+| `DATABASE_SCHEMA` | Inspection | Schema for the inspection tables; defaults to `inspection` |
+| `TEST_DATABASE_URL` | Inspection tests | PostgreSQL the tests may create and drop throwaway schemas in; `npm test` fails without it |
+| `REGISTER_TIMEOUT_MS` | Inspection | Timeout for each register call; defaults to 3000 |
+| `LOG_LEVEL` | Inspection | `debug`, `info`, `warn` or `error`; defaults to `info` |
+| `REGISTER_SERVICE_URL` | Inspection | Address of the register service; defaults to `http://localhost:8080`, and is `http://product-crud:8080` in Kubernetes |
 | `AI_API_KEY`, `AI_PROVIDER_URL`, `AI_MODEL` | Inspection | Gemini, optional (existing) |
 | `UPLOAD_DIR` | Inspection | Photo directory (existing) |
 
