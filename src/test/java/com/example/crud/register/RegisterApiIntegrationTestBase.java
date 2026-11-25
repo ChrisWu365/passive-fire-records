@@ -3,6 +3,7 @@ package com.example.crud.register;
 import com.example.crud.JacksonConfig;
 import com.example.crud.register.firestop.FirestopSystemRepository;
 import com.example.crud.register.project.ProjectRepository;
+import com.example.crud.security.AdminTokenMockMvcConfiguration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,7 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(JacksonConfig.class)
+@Import({JacksonConfig.class, AdminTokenMockMvcConfiguration.class})
 abstract class RegisterApiIntegrationTestBase {
 
     protected static final String UNKNOWN_ID = "99999999-9999-9999-9999-999999999999";
