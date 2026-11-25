@@ -7,6 +7,7 @@ import { Login } from './auth/Login';
 import { clearSession, readToken, readUser, saveSession } from './auth/session';
 import { InspectionsPage } from './inspections/InspectionsPage';
 import { OfflineProvider, type OfflineServices } from './offline/offline-context';
+import { QueueProvider, type QueueServices } from './offline/queue/queue-context';
 import { RegisterAdminPage } from './register/RegisterAdminPage';
 
 type View = 'inspections' | 'register';
@@ -16,16 +17,18 @@ export interface AppProps {
   api?: Api;
   /** The services for working without a network. Left out, every screen needs the network. */
   offline?: OfflineServices;
+  /** The device queue for records captured offline. Left out, a record can only be saved while online. */
+  queue?: QueueServices;
 }
 
-export function App({ api, offline }: AppProps = {}) {
+export function App({ api, offline, queue }: AppProps = {}) {
   const resolvedApi = useMemo(
     () => api ?? createHttpApi({ baseUrl: import.meta.env.VITE_API_URL ?? '', getToken: readToken }),
     [api]
   );
-  const workspace = offline
-    ? <OfflineProvider services={offline}><Workspace /></OfflineProvider>
-    : <Workspace />;
+  let workspace = <Workspace />;
+  if (queue) workspace = <QueueProvider services={queue}>{workspace}</QueueProvider>;
+  if (offline) workspace = <OfflineProvider services={offline}>{workspace}</OfflineProvider>;
   return <ApiProvider api={resolvedApi}>{workspace}</ApiProvider>;
 }
 
@@ -66,7 +69,7 @@ function Workspace() {
       <main className="content">
         {isAdmin && view === 'register'
           ? <RegisterAdminPage />
-          : <InspectionsPage canEdit={user.role !== 'VIEWER'} />}
+          : <InspectionsPage user={user} onSignInAgain={signOut} />}
       </main>
     </div>
   );

@@ -109,6 +109,13 @@ export interface InspectionInput {
   notes: string;
   status: Status;
   observations: Observation[];
+  /**
+   * Create only. Chosen by the device for a record captured offline: the server stores at most one record
+   * per clientId, so sending the same record again returns the stored one instead of making a second.
+   */
+  clientId?: string;
+  /** Create only. When the record was captured on the device (ISO 8601); the server defaults it to now. */
+  capturedAt?: string;
 }
 
 export interface AiDraftResult {

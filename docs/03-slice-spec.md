@@ -253,6 +253,40 @@ offline mode.
 - **AC-6.5** An expired sign-in at sync time prompts for sign-in and keeps the queue.
 - **AC-6.6** The device time of capture is stored on the server record.
 
+How a record is sent. Each run starts every waiting record from the create
+step. The server stores at most one record per `clientId`, so repeating the
+create returns the stored record, and its photo list and AI status say how far
+an earlier run got. Photos are uploaded one per request, in order, and only the
+ones the server does not have yet. This is what makes an interrupted run safe
+to repeat.
+
+How failures are sorted:
+
+- **Unreachable** (no connection, or 502, 503 or 504): the record stays
+  "Pending sync" and the run stops. The next run continues.
+- **Sign-in rejected** (401): the run stops, a prompt asks the user to sign in
+  again, and nothing in the queue changes.
+- **Anything else the server answers** (for example 400, 403, 422, 500): the
+  record becomes "Sync failed" with the server's message, and the run carries
+  on with the next record. A failed record is sent again only when the user
+  chooses Retry.
+- **AI provider failure:** the record is "Synced" with the AI draft marked
+  failed; the user retries the draft on the record. It is not retried
+  automatically.
+
+Other rules:
+
+- A new record is saved on the device when the browser is offline, or when the
+  save cannot reach the server. A record the server refuses while online is not
+  saved on the device; the refusal is shown.
+- Only new records can be captured offline. A record already on the server can
+  be changed only while online.
+- Only the signed-in user's records are sent. Records captured by someone else
+  on the same device wait for that person's sign-in.
+- Synced records stay listed on the device, without their photo files, until
+  the user clears them.
+- A "Sync failed" record can be retried or discarded, not edited.
+
 **Tests:** unit tests for the queue state machine (success, network failure,
 rejection, resume); Playwright test for the full demo script above.
 

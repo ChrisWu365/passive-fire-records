@@ -1,4 +1,5 @@
-export type SqlValue = string | number | null;
+/** Uint8Array is stored as a BLOB; it is how photo files are kept on the device. */
+export type SqlValue = string | number | null | Uint8Array;
 export type SqlRow = Record<string, SqlValue>;
 
 export interface SqlStatement {

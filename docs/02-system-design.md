@@ -243,8 +243,8 @@ was downloaded.
 | --- | --- |
 | `snapshot_project`, `snapshot_system` | The last downloaded snapshot: active projects and their active systems |
 | `snapshot_meta` | One row: when the register generated the snapshot, and when the device downloaded it |
-| `queued_inspection` | `client_id` PK, form fields, `ai_instruction`, `captured_at`, `state`, `step`, `server_id`, `last_error` |
-| `queued_photo` | `id` PK, `client_id`, image bytes, `mime_type`, `file_name`, `uploaded` |
+| `queued_inspection` | `client_id` PK, the form fields, the project name and system copy, `ai_instruction`, `captured_at`, who captured it, `state` (`PENDING`, `FAILED`, `SYNCED`), `server_id`, `photo_count`, `ai_outcome`, `last_error` |
+| `queued_photo` | `client_id`, `position`, `file_name`, `mime_type`, image bytes; primary key (`client_id`, `position`) |
 
 **Download.** `GET /api/register/snapshot`, check that the answer is shaped like
 a snapshot, then replace the three snapshot tables in one transaction. If the
@@ -255,23 +255,47 @@ download button is disabled while the device is offline.
 page show a notice that they need a connection, not an error, and load by
 themselves when the connection returns.
 
-**Sync queue.** Runs on the browser's `online` event, on app start, and from a
-"Sync now" button. Browser background sync is not used because Safari and
-Firefox do not support it. For each queued record, in order:
+**Capturing offline.** A new record is stored on the device, with its photos,
+when the browser is offline, or when the save cannot reach the server. A record
+the server answers and refuses is not stored on the device; the refusal is
+shown. Only new records can be captured offline: a record already on the server
+can be changed only while online.
 
-1. `POST /api/inspections` with the `client_id`; store the returned `server_id`.
-2. Upload each photo not yet marked uploaded.
-3. `POST /api/inspections/{id}/ai-summary` with the instruction.
-4. Mark the record synced.
+**Sync queue.** Runs when the "On this device" panel appears (app start and
+after sign-in), on the browser's `online` event, after a record is stored on
+the device, and from a "Sync now" button. Browser background sync is not used
+because Safari and Firefox do not support it. Only one run is in progress at a
+time. For each waiting record captured by the signed-in user, oldest first:
 
-The current step is saved after each success, so a retry resumes there.
+1. `POST /api/inspections` with the `client_id` and the device's capture time.
+   The server keeps one record per `client_id`, so on a repeat it returns the
+   record it already has.
+2. Upload the photos the server does not have yet, one per request and in
+   order. The number of photos on the server's record says which are left.
+3. If the server's record has no AI outcome yet,
+   `POST /api/inspections/{id}/ai-summary` with the instruction.
+4. Mark the record synced and remove its photo files from the device.
+
+No step counter is stored. Every run starts each record from step 1, and the
+server's answer shows how far an earlier run got. That makes a run interrupted
+anywhere, including after the server acted but before its answer arrived, safe
+to repeat: nothing is created or uploaded twice. It relies on nobody else
+adding photos to the record while it is being sent.
 
 | Server answer | Result |
 | --- | --- |
-| Network error, 502, 503 on steps 1 and 2 | Stays "Pending sync"; retried next run |
-| 400 or 422 | "Sync failed" with the server's message; Retry / Discard |
-| 401 | Queue paused; prompt to sign in; queue kept |
-| Failure on step 3 (AI) | Record is "Synced"; AI draft shown as failed with a retry action |
+| No answer, or 502, 503, 504 | Stays "Pending sync"; the run stops and the next run continues |
+| 401 | The run stops; a prompt asks the user to sign in again; the queue is untouched |
+| Any other answer, such as 400, 403, 422 or 500 | "Sync failed" with the server's message; the run carries on with the next record; sent again only on Retry |
+| The AI provider failed | "Synced", with the AI draft marked failed; the user retries the draft on the record |
+
+A 502 on the AI request is ambiguous, since a gateway answers 502 too. The
+engine reads the record back: only the inspection service marks a record's AI
+status as failed, so anything else is treated as unreachable.
+
+A "Sync failed" record can be retried or discarded, not edited. Synced records
+stay listed, without their photo files, until the user clears them. Records
+captured by another user on the same device wait for that user's sign-in.
 
 **Sign-in while offline.** The token stays in `localStorage`. The app works
 offline with whatever token it has; it only matters at sync time.

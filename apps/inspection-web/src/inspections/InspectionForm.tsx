@@ -12,9 +12,14 @@ import {
 import { Field } from '../components/Field';
 import { ErrorAlert, messageOf, StatusMessage } from '../components/feedback';
 import { useOffline } from '../offline/offline-context';
+import { useQueue } from '../offline/queue/queue-context';
+import { isUnreachable } from '../offline/reachability';
+import { useOnline } from '../offline/use-online';
+import type { QueuedBy, QueuedInspection } from '../offline/queue/queued-inspection';
 import { createLiveReferenceData, createOfflineReferenceData, type ReferenceSource } from '../offline/reference-data';
 import { AiDraftNote } from './AiDraftNote';
 import { ObservationsEditor } from './ObservationsEditor';
+import { PendingPhotos } from './PendingPhotos';
 import { PhotoSection } from './PhotoSection';
 import { projectOptions, systemOptions } from './reference-options';
 import { SystemDetails } from './SystemDetails';
@@ -27,6 +32,13 @@ export interface InspectionFormProps {
   onClose: () => void;
   /** Called with the stored record after every successful save, upload, photo removal or AI draft. */
   onSaved: (inspection: Inspection) => void;
+  /**
+   * Who is capturing the record. Needed to save a new record on the device when the server cannot be
+   * reached; without it (or without a device queue) a record can only be saved while online.
+   */
+  capturedBy?: QueuedBy;
+  /** Called after a new record was saved on the device instead of on the server. */
+  onQueued?: (queued: QueuedInspection) => void;
 }
 
 const DEFAULT_AI_INSTRUCTION =
@@ -36,6 +48,11 @@ const MAX_PHOTOS = 5;
 const MAX_PHOTO_BYTES = 10 * 1024 * 1024;
 const INCOMPLETE = 'Choose a project, a firestop system and enter a location.';
 const SAVE_BEFORE_AI = 'Save the inspection before requesting an AI draft.';
+const AI_AFTER_SYNC = 'The AI draft will be requested when this record syncs.';
+const EXISTING_NEEDS_CONNECTION =
+  'You are offline. A record that is already on the server can be changed only while online.';
+const TOO_MANY_PHOTOS = `A record can hold at most ${MAX_PHOTOS} photos.`;
+const REFERENCE_NOT_LOADED = 'The chosen project or system is not available on this device. Choose them again.';
 
 const EMPTY_INPUT: InspectionInput = {
   projectId: '', systemId: '', location: '', notes: '', status: 'DRAFT', observations: []
@@ -56,9 +73,12 @@ function inputFrom(record: Inspection): InspectionInput {
  * The inspection record dialog: project and firestop system pickers fed by the register, the record's
  * fields, observations, photos, and the AI draft. It reads and writes through useApi().
  */
-export function InspectionForm({ initial, canEdit, onClose, onSaved }: InspectionFormProps) {
+export function InspectionForm(props: InspectionFormProps) {
+  const { initial, canEdit, onClose, onSaved, capturedBy, onQueued } = props;
   const api = useApi();
   const offline = useOffline();
+  const queue = useQueue();
+  const online = useOnline();
   /** Projects and systems for the pickers: the live register, or the downloaded copy when it is unreachable. */
   const reference = useMemo(
     () => (offline
@@ -78,6 +98,8 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
   const [error, setError] = useState('');
   /** Set when the pickers show the device's downloaded copy; holds when that copy was downloaded. */
   const [downloadedAt, setDownloadedAt] = useState<string | null>(null);
+  /** Photos chosen for a new record while offline; stored on the device together with the record. */
+  const [pendingPhotos, setPendingPhotos] = useState<File[]>([]);
 
   const noteSource = (source: ReferenceSource) => {
     if (source.kind === 'downloaded') setDownloadedAt(source.downloadedAt);
@@ -118,6 +140,10 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
   const keepsStoredReference = record !== null
     && record.projectId === form.projectId && record.systemId === form.systemId;
   const shownSystem = systemToShow(form.systemId, systems, keepsStoredReference ? record.system : undefined);
+  /** A new record can be kept on the device when there is a device queue and we know who is capturing. */
+  const canCapture = record === null && queue !== null && capturedBy !== undefined;
+  /** No connection: the new record goes to the device, with its photos, and is sent later. */
+  const capturingOffline = canCapture && !online;
 
   /** Runs one server action with the shared busy, message and error handling. */
   const run = async (action: () => Promise<string>, fallbackError: string) => {
@@ -133,19 +159,75 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
     }
   };
 
+  /** Stores the new record and its photos on the device, to be sent when the server can be reached. */
+  const saveOnDevice = async (): Promise<void> => {
+    if (!queue || !capturedBy) return;
+    const project = projects.find((item) => item.id === form.projectId);
+    const system = systems.find((item) => item.id === form.systemId);
+    if (!project || !system) throw new Error(REFERENCE_NOT_LOADED);
+    const photos = await Promise.all(pendingPhotos.map(async (file) => ({
+      fileName: file.name,
+      mimeType: file.type,
+      bytes: new Uint8Array(await file.arrayBuffer())
+    })));
+    const queued = await queue.queueStore.add({
+      projectId: form.projectId,
+      projectName: project.name,
+      systemId: form.systemId,
+      system: snapshotOf(system),
+      location: form.location,
+      notes: form.notes,
+      status: form.status,
+      observations: form.observations,
+      aiInstruction,
+      capturedAt: queue.now().toISOString(),
+      createdBy: capturedBy
+    }, photos);
+    onQueued?.(queued);
+  };
+
   const save = () => {
     if (!form.projectId || !form.systemId || !form.location.trim()) {
       setMessage('');
       setError(INCOMPLETE);
       return;
     }
+    if (record && !online) {
+      setMessage('');
+      setError(EXISTING_NEEDS_CONNECTION);
+      return;
+    }
     void run(async () => {
-      const saved = record ? await api.inspections.update(record.id, form) : await api.inspections.create(form);
+      if (capturingOffline) {
+        await saveOnDevice();
+        return '';
+      }
+      let saved: Inspection;
+      try {
+        saved = record ? await api.inspections.update(record.id, form) : await api.inspections.create(form);
+      } catch (failure) {
+        // The connection dropped as the record was saved: keep it on the device instead of losing it.
+        // A record the server answered and refused is a different matter, and is shown as the error it is.
+        if (!canCapture || !isUnreachable(failure)) throw failure;
+        await saveOnDevice();
+        return '';
+      }
       setRecord(saved);
       setForm(inputFrom(saved));
       onSaved(saved);
       return 'Saved';
     }, 'The inspection could not be saved');
+  };
+
+  const addPendingPhotos = (files: File[]) => {
+    const oversized = files.find((file) => file.size > MAX_PHOTO_BYTES);
+    if (oversized || pendingPhotos.length + files.length > MAX_PHOTOS) {
+      setMessage('');
+      setError(oversized ? `${oversized.name} is larger than 10 MB.` : TOO_MANY_PHOTOS);
+      return;
+    }
+    setError('');
+    setPendingPhotos([...pendingPhotos, ...files]);
   };
 
   /** Photos and AI drafts change the stored record but must not discard what the user is still typing. */
@@ -284,13 +366,21 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
           canEdit={canEdit}
           onChange={(observations) => patch({ observations })}
         />
-        <PhotoSection
-          photos={record?.photos ?? []}
-          canEdit={canEdit}
-          recordIsSaved={record !== null}
-          onUpload={uploadPhotos}
-          onRemove={removePhoto}
-        />
+        {capturingOffline && canEdit ? (
+          <PendingPhotos
+            files={pendingPhotos}
+            onAdd={addPendingPhotos}
+            onRemove={(position) => setPendingPhotos(pendingPhotos.filter((_, index) => index !== position))}
+          />
+        ) : (
+          <PhotoSection
+            photos={record?.photos ?? []}
+            canEdit={canEdit}
+            recordIsSaved={record !== null}
+            onUpload={uploadPhotos}
+            onRemove={removePhoto}
+          />
+        )}
         <AiDraftNote status={record?.aiStatus ?? 'NONE'} summary={record?.aiSummary ?? null} />
 
         <div className="modal-actions">
@@ -306,7 +396,13 @@ export function InspectionForm({ initial, canEdit, onClose, onSaved }: Inspectio
                   />
                 )}
               </Field>
-              <button type="button" className="button secondary" disabled={busy} onClick={requestAiDraft}>
+              {capturingOffline && <p className="muted">{AI_AFTER_SYNC}</p>}
+              <button
+                type="button"
+                className="button secondary"
+                disabled={busy || capturingOffline}
+                onClick={requestAiDraft}
+              >
                 ✦ Generate AI draft
               </button>
               <button type="button" className="button primary" disabled={busy} onClick={save}>
@@ -335,6 +431,18 @@ function systemToShow(
 ): SystemSnapshot | undefined {
   if (!systemId) return undefined;
   return storedCopy ?? systems.find((system) => system.id === systemId);
+}
+
+/** The details a record copies from a register system. */
+function snapshotOf(system: FirestopSystem): SystemSnapshot {
+  return {
+    code: system.code,
+    substrate: system.substrate,
+    serviceType: system.serviceType,
+    fireRating: system.fireRating,
+    materials: system.materials,
+    installationMethod: system.installationMethod
+  };
 }
 
 /** @returns why these files cannot be uploaded, or undefined when they can */

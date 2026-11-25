@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApi } from '../api/api-context';
-import type { Inspection } from '../api/types';
-import { ErrorAlert, messageOf } from '../components/feedback';
+import type { Inspection, User } from '../api/types';
+import { ErrorAlert, messageOf, StatusMessage } from '../components/feedback';
 import { OfflinePanel } from '../offline/OfflinePanel';
 import { OfflineNotice } from '../offline/OfflineNotice';
 import { useOffline } from '../offline/offline-context';
+import { DeviceQueuePanel } from '../offline/queue/DeviceQueuePanel';
 import { isNetworkFailure } from '../offline/reachability';
 import { useOnline } from '../offline/use-online';
 import { InspectionForm } from './InspectionForm';
@@ -15,10 +16,18 @@ type OpenRecord = { kind: 'closed' } | { kind: 'new' } | { kind: 'existing'; ins
 
 const CLOSED: OpenRecord = { kind: 'closed' };
 const LIST_NEEDS_CONNECTION = 'You are offline. The inspections list will load when you are back online.';
+const SAVED_ON_DEVICE = 'Saved on this device. It will be sent when you are back online.';
 
-/** The inspections view: the list, and the record dialog opened from it. */
-export function InspectionsPage({ canEdit }: { canEdit: boolean }) {
+interface InspectionsPageProps {
+  user: User;
+  /** Called when the user chooses to sign in again after the server rejected the sign-in during a sync. */
+  onSignInAgain: () => void;
+}
+
+/** The inspections view: the list, the records held on the device, and the record dialog. */
+export function InspectionsPage({ user, onSignInAgain }: InspectionsPageProps) {
   const api = useApi();
+  const canEdit = user.role !== 'VIEWER';
   const connectivity = useOffline()?.connectivity;
   const online = useOnline();
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -27,6 +36,10 @@ export function InspectionsPage({ canEdit }: { canEdit: boolean }) {
   /** True when the list could not load because the device has no connection; not an error to fix. */
   const [waitingForConnection, setWaitingForConnection] = useState(false);
   const [open, setOpen] = useState<OpenRecord>(CLOSED);
+  /** Shown after a record was stored on the device instead of on the server. */
+  const [deviceNotice, setDeviceNotice] = useState('');
+  /** Bumped each time a record is stored on the device, so that the device panel lists and sends it. */
+  const [queuedCount, setQueuedCount] = useState(0);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -63,12 +76,27 @@ export function InspectionsPage({ canEdit }: { canEdit: boolean }) {
           <p>Capture evidence, surface observations and keep a human in the loop.</p>
         </div>
         {canEdit && (
-          <button className="button primary" onClick={() => setOpen({ kind: 'new' })}>+ New inspection</button>
+          <button
+            className="button primary"
+            onClick={() => {
+              setDeviceNotice('');
+              setOpen({ kind: 'new' });
+            }}
+          >
+            + New inspection
+          </button>
         )}
       </section>
       <OfflinePanel />
       <ErrorAlert message={error} />
       {waitingForConnection && <OfflineNotice message={LIST_NEEDS_CONNECTION} />}
+      <StatusMessage message={deviceNotice} />
+      <DeviceQueuePanel
+        user={user}
+        onSignInAgain={onSignInAgain}
+        onSynced={() => void refresh()}
+        reloadSignal={queuedCount}
+      />
       <InspectionList
         inspections={inspections}
         loading={loading}
@@ -80,6 +108,12 @@ export function InspectionsPage({ canEdit }: { canEdit: boolean }) {
           canEdit={canEdit}
           onClose={() => setOpen(CLOSED)}
           onSaved={() => void refresh()}
+          capturedBy={{ id: user.id, name: user.name }}
+          onQueued={() => {
+            setOpen(CLOSED);
+            setDeviceNotice(SAVED_ON_DEVICE);
+            setQueuedCount((count) => count + 1);
+          }}
         />
       )}
     </>

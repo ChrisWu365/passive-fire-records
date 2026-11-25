@@ -48,3 +48,10 @@ h1, h2, h3, p { margin-top: 0; }
 .offline-note { background: #fff6e8; color: #8a4b12; border-radius: 8px; padding: 10px 12px; font-size: .84rem; }
 .button:disabled { opacity: .55; cursor: not-allowed; }
 @media print { .offline-panel, .offline-note { display: none !important; } }
+.device-queue { margin-bottom: 22px; } .device-queue-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.device-queue .alert { margin: 12px 24px; }
+.device-queue-list { list-style: none; margin: 0; padding: 0; } .device-queue-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 14px 24px; border-bottom: 1px solid #edf0f1; font-size: .88rem; }
+.device-queue-main { min-width: 200px; flex: 1; } .device-queue-actions { display: flex; gap: 6px; } .device-queue-confirm { flex-basis: 100%; margin: 0 !important; }
+.badge.sync-pending { background: #e4effa; color: #22679a; } .badge.sync-failed { background: #fff0f0; color: #a33333; } .badge.sync-synced { background: #dcf4eb; color: #167052; }
+.pending-photos { list-style: none; margin: 0 0 14px; padding: 0; font-size: .86rem; } .pending-photos li { display: flex; justify-content: space-between; align-items: center; border: 1px solid #e1e7e9; border-radius: 8px; padding: 6px 10px; margin-bottom: 6px; }
+@media print { .device-queue { display: none !important; } }
