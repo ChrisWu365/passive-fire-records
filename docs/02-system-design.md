@@ -156,6 +156,25 @@ record was stored. Demo users stay in code.
 - Timeout, connection error, any other status, or an unreadable body: respond
   503. Nothing is stored.
 
+## Web app and gateway
+
+- **One origin.** The browser calls only paths under `/api`, `/uploads` and
+  `/health` on the page's own origin. `/api/register/` is routed to the register
+  service and everything else to the inspection service: by Nginx in the built
+  image, and by the Vite dev server in development and in the end-to-end tests.
+- **Structure.** Screens get an `Api` object from a React context. The running
+  app provides the HTTP implementation; component tests provide an in-memory
+  fake. No screen calls `fetch` directly.
+- **Register screen** (admin only): projects on the left; for the selected
+  project, its systems with add, edit, deactivate and reactivate. Validation is
+  the register's own: its field messages are shown beside the fields.
+- **Record dialog:** the project picker offers active projects, and the system
+  picker the chosen project's active systems. The system's details are shown
+  read-only. A stored record shows its own copy of those details, and keeps a
+  project or system that was later deactivated selected, marked "(inactive)".
+- Hiding the register from other roles is a convenience. The protection is the
+  register service refusing every write without an admin token.
+
 ## Authentication
 
 - The inspection service keeps issuing the HS256 JWT (claims `sub`, `email`,
