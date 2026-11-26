@@ -25,7 +25,9 @@ async function openHarbourView() {
   return user;
 }
 
+/** Opens the "New system" dialog and fills in its form. */
 async function fillSystemForm(user: ReturnType<typeof userEvent.setup>, code: string) {
+  await user.click(screen.getByRole('button', { name: 'New system' }));
   await user.type(screen.getByLabelText('System code'), code);
   await user.type(screen.getByLabelText('Substrate'), 'Concrete floor');
   await user.type(screen.getByLabelText('Service type'), 'Metal pipe up to 100 mm');
@@ -40,10 +42,11 @@ function systemRow(code: string): HTMLElement {
 
 describe('Register admin page', () => {
   it('AC-4.1 lists every project, and marks the inactive one', async () => {
-    renderPage();
+    const user = renderPage();
 
     expect(await screen.findByRole('button', { name: /HVA.*Harbour View Apartments/ })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /MKT.*Market Square Offices/ })).toBeInTheDocument();
+    await user.click(screen.getByRole('checkbox', { name: 'Show inactive' }));
     expect(screen.getByRole('button', { name: /OLD.*Old Depot.*Inactive/ })).toBeInTheDocument();
   });
 
@@ -87,6 +90,7 @@ describe('Register admin page', () => {
     await fillSystemForm(user, 'SYS-05');
     await user.click(screen.getByRole('button', { name: 'Add system' }));
     await screen.findByRole('row', { name: /SYS-05/ });
+    await user.click(screen.getByRole('button', { name: 'New system' }));
 
     expect(screen.getByLabelText('System code')).toHaveValue('');
     expect(screen.getByLabelText('Materials')).toHaveValue('');
@@ -162,6 +166,7 @@ describe('Register admin page', () => {
     const user = renderPage();
     await screen.findByRole('button', { name: /HVA/ });
 
+    await user.click(screen.getByRole('button', { name: 'New project' }));
     await user.type(screen.getByLabelText('Project code'), 'NEW');
     await user.type(screen.getByLabelText('Project name'), 'New Tower');
     await user.type(screen.getByLabelText('Address'), '9 Hill Road');

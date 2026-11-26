@@ -82,6 +82,7 @@ test('AC-5.3 downloading again replaces the local copy, including removing a dea
   await signIn(page, 'admin@example.com', 'Admin123!');
   await page.getByRole('button', { name: 'Register', exact: true }).click();
   await page.getByRole('button', { name: /DEMO.*Demo Apartments/ }).click();
+  await page.getByRole('button', { name: 'New system' }).click();
   await page.getByLabel('System code').fill(systemCode);
   await page.getByLabel('Substrate').fill('Concrete floor');
   await page.getByLabel('Service type').fill('Metal pipe up to 100 mm');

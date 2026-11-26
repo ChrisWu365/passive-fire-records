@@ -36,6 +36,7 @@ async function addSystemAsAdmin(page: Page, systemCode: string, materials: strin
   await page.getByRole('button', { name: 'Register' }).click();
   await page.getByRole('button', { name: new RegExp(`DEMO.*${escapeRegExp(SEEDED_PROJECT)}`) }).click();
   await expect(page.getByRole('heading', { name: `Approved systems for ${SEEDED_PROJECT}` })).toBeVisible();
+  await page.getByRole('button', { name: 'New system' }).click();
   await page.getByLabel('System code').fill(systemCode);
   await page.getByLabel('Substrate').fill('Concrete floor');
   await page.getByLabel('Service type').fill('Metal pipe up to 100 mm');
