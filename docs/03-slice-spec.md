@@ -1,7 +1,8 @@
 # Slice spec
 
 Status: Slices 1 to 6 are built and their criteria have passing tests. Slice 7 is in place; its two
-criteria are manual checks on a deployed environment.
+criteria are manual checks on a deployed environment. Slice 8 is specified and its tests are written;
+it is not implemented until those tests are approved.
 Related documents: [01-business-logic.md](./01-business-logic.md) (rules and terms)
 and [02-system-design.md](./02-system-design.md) (architecture, data model, APIs).
 
@@ -310,6 +311,43 @@ rejection, resume); Playwright test for the full demo script above.
 - **AC-7.1** *(manual)* A push to `dev` builds, tests, publishes and deploys all three images, and
   the demo script works on the deployed environment.
 - **AC-7.2** *(manual)* The README's description matches what is implemented and tested.
+
+## Slice 8: Screens that stay usable as the lists grow
+
+**In scope**
+
+- Register screen: the forms move out of the page into dialogs opened from a button in each panel's
+  heading, so that adding never depends on scrolling past a list. This replaces the in-page forms of
+  slice 4; the wording of the fields and of the submit buttons does not change.
+- Register screen: search the project list, hide inactive projects by default, and edit a project's
+  code, name and address.
+- Inspections screen: search the list, filter it by status, and show it a page at a time.
+- Searching, filtering and paging work on the list the browser has already loaded. Asking the services
+  for one page at a time is out of scope.
+
+**Acceptance**
+
+- **AC-8.1** The project form is shown only in a "New project" dialog. Adding a project closes the
+  dialog and opens the new project; Cancel closes it and adds nothing; a refusal from the register
+  keeps the dialog open with the register's messages and what was typed.
+- **AC-8.2** The system form is shown only in a dialog: "New system" opens it empty, Edit opens it
+  filled in. Saving closes it and the list shows the result; Cancel closes it and changes nothing; a
+  refusal keeps it open with the register's messages and what was typed.
+- **AC-8.3** The project list can be searched by code or name, in any letter case. Inactive projects
+  are listed only while "Show inactive" is ticked, except the project that is open, which stays
+  listed. When nothing matches, the list says so.
+- **AC-8.4** An admin can change a project's code, name and address in a dialog. The project keeps
+  its active state. A refusal keeps the dialog open with the register's messages.
+- **AC-8.5** Opening a register dialog moves the keyboard focus to its first field, and Escape closes
+  it without saving.
+- **AC-8.6** The inspections list can be searched by project name or location, in any letter case,
+  and filtered by status. While it is narrowed it says how many of the records are shown, and says so
+  when nothing matches. The count tiles always count every record.
+- **AC-8.7** The inspections list shows 25 records a page, with Previous and Next and the page
+  number. Narrowing the list returns to the first page. A list that fits on one page shows no pager.
+
+**Tests:** React component tests for the register dialogs, the project list and the inspections
+list. The existing tests of slice 4 that filled the in-page forms gain the step that opens the dialog.
 
 ## Out of scope for all slices
 
