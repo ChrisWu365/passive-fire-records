@@ -28,15 +28,15 @@ export default defineConfig({
         description: 'Record passive fire inspections on site, with or without a connection.',
         start_url: '/',
         display: 'standalone',
-        background_color: '#102a36',
-        theme_color: '#102a36',
+        background_color: '#16130f',
+        theme_color: '#16130f',
         icons: [
           { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
           { src: 'favicon.png', sizes: '128x128', type: 'image/png' }
         ]
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,wasm}'],
+        globPatterns: ['**/*.{js,css,html,png,svg,wasm,woff2}'],
         maximumFileSizeToCacheInBytes: MAX_CACHED_FILE_BYTES,
         // Any page address opens the cached app; requests to the services are never answered from cache.
         navigateFallback: '/index.html',

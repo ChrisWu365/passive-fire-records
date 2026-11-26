@@ -1,0 +1,122 @@
+/* Parts shared by every screen: buttons, labels, messages, fields, panels and tables. */
+.button {
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-size: .88rem;
+  letter-spacing: .02em;
+  transition: background-color .15s, color .15s, transform .1s, box-shadow .15s;
+}
+
+.button:active:not(:disabled) { transform: translate(1px, 1px); }
+.button:disabled { opacity: .5; cursor: not-allowed; }
+.button.full { width: 100%; }
+
+.button.primary { background: var(--signal); color: #fff; box-shadow: 3px 3px 0 var(--ink); }
+.button.primary:hover:not(:disabled) { background: var(--signal-deep); }
+.button.primary:active:not(:disabled) { box-shadow: 1px 1px 0 var(--ink); }
+
+.button.secondary { background: var(--ink); color: var(--paper); }
+.button.secondary:hover:not(:disabled) { background: var(--ink-soft); }
+
+.button.ghost { background: transparent; color: inherit; border-color: currentcolor; }
+.button.ghost:hover:not(:disabled) { background: rgb(22 19 15 / 7%); }
+
+.button.link {
+  padding: 4px;
+  background: none;
+  color: var(--signal-deep);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.button.link:hover:not(:disabled) { color: var(--ink); }
+
+/* On the dark top bar the colours swap: the current section is the light one. */
+.topbar .button.ghost { border-color: rgb(241 236 223 / 45%); }
+.topbar .button.ghost:hover:not(:disabled) { background: rgb(241 236 223 / 12%); }
+.topbar .button.secondary { background: var(--paper); color: var(--ink); }
+
+.icon-button { border: 0; background: none; font-size: 2rem; line-height: 1; color: var(--muted); }
+.icon-button:hover { color: var(--signal); }
+
+/* States are stamped, not pilled: square, monospaced, outlined in their own colour. */
+.status, .badge, .connectivity {
+  display: inline-block;
+  padding: 3px 8px;
+  border: 1px solid currentcolor;
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  font-weight: 500;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.status.draft, .badge.inactive { background: var(--neutral-tint); color: var(--muted); }
+.status.in_progress, .badge.sync-pending { background: var(--info-tint); color: var(--info); }
+.status.action_required { background: var(--caution-tint); color: var(--caution); }
+.status.completed, .badge.active, .badge.sync-synced { background: var(--ok-tint); color: var(--ok); }
+.badge.sync-failed { background: var(--danger-tint); color: var(--danger); }
+
+.alert { margin: 14px 0; padding: 12px 14px; border-left: 4px solid currentcolor; border-radius: var(--radius); font-size: .88rem; }
+.alert.error { background: var(--danger-tint); color: var(--danger); }
+.alert.success { background: var(--ok-tint); color: var(--ok); }
+.alert.offline { background: var(--caution-tint); color: var(--caution); }
+
+.field { margin-bottom: 14px; }
+
+.field > label, .login-card label, .modal label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: .72rem;
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.field-error { display: block; margin-top: 4px; color: var(--danger); font-size: .8rem; }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+.form-actions { display: flex; gap: 10px; }
+
+.panel {
+  overflow: hidden;
+  background: var(--sheet);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--lift);
+}
+
+.panel-heading { padding: 18px 24px 16px; border-bottom: 1px solid var(--ink); }
+.panel-heading h3 { margin-bottom: 4px; font-size: 1.55rem; }
+.subline { display: block; margin-top: 4px; color: var(--muted); font-size: .84rem; }
+
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+
+th, td { padding: 15px 24px; text-align: left; border-bottom: 1px solid var(--rule); font-size: .9rem; white-space: nowrap; }
+
+th {
+  background: var(--paper);
+  border-bottom-color: var(--rule-strong);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: .68rem;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+td strong { font-weight: 600; }
+tbody tr { transition: background-color .12s; }
+tbody tr:hover { background: rgb(201 44 21 / 5%); }
+tbody tr:last-child td { border-bottom: 0; }
+
+@media (max-width: 720px) {
+  .form-grid { grid-template-columns: 1fr; }
+  th, td { padding: 13px 12px; }
+}

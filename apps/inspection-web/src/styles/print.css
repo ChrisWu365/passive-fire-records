@@ -1,0 +1,12 @@
+/* "Print report" prints the open record alone: plain white, no page furniture, no actions. */
+@media print {
+  body { background: #fff; }
+
+  .topbar, .hero, .stats, .panel, .offline-panel, .offline-note, .device-queue,
+  .modal-backdrop > .modal > .modal-actions, .icon-button { display: none !important; }
+
+  .modal-backdrop { position: static; display: block; background: none; }
+  .modal { width: 100%; max-height: none; border: 0; box-shadow: none; }
+  .modal-header h2 { font-size: 2rem; }
+  .system-details { padding: 0; background: none; border: 0; }
+}

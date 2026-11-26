@@ -1,0 +1,94 @@
+/* The inspections screen: the count strip and the record dialog with its sections. */
+
+/* One ruled strip of figures, as on a site tally sheet, not three separate cards. */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin-bottom: 22px;
+  background: var(--sheet);
+  border: 1px solid var(--ink);
+  border-radius: var(--radius);
+  box-shadow: var(--lift);
+}
+
+.stat { display: flex; flex-direction: column-reverse; gap: 2px; padding: 16px 24px 18px; border-left: 1px solid var(--ink); }
+.stat:first-child { border-left: 0; }
+.stat span { color: var(--muted); font-family: var(--font-mono); font-size: .7rem; letter-spacing: .1em; text-transform: uppercase; }
+.stat strong { font-family: var(--font-display); font-size: 3.6rem; font-weight: 800; line-height: .9; }
+.stat.warning strong { color: var(--signal); }
+.stat.success strong { color: var(--ok); }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgb(22 19 15 / 72%);
+  animation: fade-in .2s ease-out backwards;
+}
+
+.modal {
+  width: min(820px, 100%);
+  max-height: 94vh;
+  overflow-y: auto;
+  padding: 28px 30px 30px;
+  background: var(--sheet);
+  border: 1px solid var(--ink);
+  border-top: 8px solid var(--signal);
+  border-radius: var(--radius);
+  box-shadow: 10px 10px 0 rgb(0 0 0 / 30%);
+  animation: drop-in .32s var(--ease-out) backwards;
+}
+
+.modal.narrow { width: min(520px, 100%); }
+.modal-header { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
+.modal-header h2 { margin: 6px 0 22px; font-size: 2.3rem; }
+.modal-actions { display: flex; justify-content: end; align-items: end; gap: 10px; flex-wrap: wrap; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--rule-strong); }
+.modal-actions .field { flex: 1 1 100%; }
+
+.section-heading { display: flex; justify-content: space-between; align-items: center; margin-top: 25px; }
+.section-heading h3 { margin-bottom: 0; font-size: 1.3rem; }
+
+.observation { margin: 10px 0; padding: 12px; border: 1px solid var(--rule-strong); border-left: 4px solid var(--ink); border-radius: var(--radius); }
+.observation-row { display: grid; grid-template-columns: 150px 1fr; gap: 10px; }
+
+.photo-list { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+.photo-item { position: relative; }
+.photo-list img { display: block; width: 116px; height: 88px; object-fit: cover; border: 1px solid var(--ink); border-radius: var(--radius); }
+.photo-delete { position: absolute; top: 4px; right: 4px; padding: 0 7px; background: var(--sheet); line-height: 1.5; }
+.photo-delete:hover:not(:disabled) { background: var(--signal); color: #fff; }
+
+.pending-photos { list-style: none; margin: 0 0 14px; padding: 0; font-size: .86rem; }
+.pending-photos li { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; padding: 6px 10px; border: 1px solid var(--rule-strong); border-radius: var(--radius); font-family: var(--font-mono); }
+
+/* The chosen system's details, set out like the data plate on a product. */
+.system-details { margin-bottom: 14px; padding: 14px 16px; background: var(--paper); border: 1px solid var(--rule-strong); border-radius: var(--radius); }
+.system-details dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 18px; margin: 0; }
+.system-details dt { color: var(--muted); font-family: var(--font-mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
+.system-details dd { margin: 3px 0 0; font-size: .9rem; }
+
+/* An AI draft is marked as unchecked work: hazard edge, dashed outline, never a "finished" look. */
+.ai-note {
+  position: relative;
+  margin: 18px 0;
+  padding: 14px 16px 14px 28px;
+  background: var(--caution-tint);
+  border: 1px dashed var(--ink);
+  border-radius: var(--radius);
+}
+
+.ai-note::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 12px; background: repeating-linear-gradient(-45deg, var(--ink) 0 6px, #e0a100 6px 12px); }
+.ai-note strong { font-family: var(--font-mono); font-size: .76rem; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.ai-note p { margin: 8px 0; }
+.ai-note small { color: var(--ink-soft); }
+.ai-note.failed { background: var(--danger-tint); }
+
+@media (max-width: 720px) {
+  .stats { grid-template-columns: 1fr; }
+  .stat { border-left: 0; border-top: 1px solid var(--ink); }
+  .stat:first-child { border-top: 0; }
+  .observation-row { grid-template-columns: 1fr; }
+  .modal { padding: 20px; }
+}

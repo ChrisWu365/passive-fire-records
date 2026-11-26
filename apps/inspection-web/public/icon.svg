@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Inspection workspace">
-  <rect width="512" height="512" rx="96" fill="#102a36"/>
-  <path d="M256 96l128 48v96c0 84-54 150-128 176-74-26-128-92-128-176v-96z" fill="#0e8671"/>
+  <rect width="512" height="512" rx="24" fill="#16130f"/>
+  <path d="M256 96l128 48v96c0 84-54 150-128 176-74-26-128-92-128-176v-96z" fill="#c92c15"/>
   <path d="M206 262l36 36 68-76" fill="none" stroke="#ffffff" stroke-width="32" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>
