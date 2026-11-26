@@ -1,5 +1,5 @@
 import { vi, type Mock } from 'vitest';
-import type { FirestopSystem, Project } from '../api/types';
+import type { Area, FirestopSystem, Project } from '../api/types';
 import type { Connectivity } from '../offline/connectivity';
 import type { OfflineServices } from '../offline/offline-context';
 import type { RegisterSnapshot, SnapshotInfo } from '../offline/snapshot';
@@ -11,9 +11,11 @@ export const DOWNLOADED_SYSTEM_ID = 'aaaaaaaa-0000-4000-8000-000000000101';
 export const SECOND_DOWNLOADED_SYSTEM_ID = 'aaaaaaaa-0000-4000-8000-000000000102';
 export const SECOND_DOWNLOADED_PROJECT_ID = 'aaaaaaaa-0000-4000-8000-000000000002';
 
+export const DOWNLOADED_AREA_ID = 'aaaaaaaa-0000-4000-8000-000000000201';
+export const SECOND_DOWNLOADED_AREA_ID = 'aaaaaaaa-0000-4000-8000-000000000202';
 export const FIXED_NOW = '2030-06-01T07:15:00.000Z';
 
-/** A register snapshot with two projects: one with two systems, one with none. */
+/** A register snapshot with two projects: one with two systems and two areas, one with neither. */
 export function snapshot(overrides: Partial<RegisterSnapshot> = {}): RegisterSnapshot {
   return {
     generatedAt: '2030-06-01T07:14:58.000Z',
@@ -42,9 +44,16 @@ export function snapshot(overrides: Partial<RegisterSnapshot> = {}): RegisterSna
             materials: 'Demo sealant L',
             installationMethod: 'Seal around the pipe.'
           }
+        ],
+        areas: [
+          { id: DOWNLOADED_AREA_ID, name: 'Podium level' },
+          { id: SECOND_DOWNLOADED_AREA_ID, name: 'Basement plant room' }
         ]
       },
-      { id: SECOND_DOWNLOADED_PROJECT_ID, code: 'EMP', name: 'Empty Annex', address: null, systems: [] }
+      {
+        id: SECOND_DOWNLOADED_PROJECT_ID, code: 'EMP', name: 'Empty Annex', address: null,
+        systems: [], areas: []
+      }
     ],
     ...overrides
   };
@@ -77,7 +86,7 @@ export class InMemorySnapshotStore implements SnapshotStore {
 
   async listProjects(): Promise<Project[]> {
     return (this.stored?.snapshot.projects ?? [])
-      .map(({ systems: _systems, ...project }) => ({ ...project, active: true }))
+      .map(({ systems: _systems, areas: _areas, ...project }) => ({ ...project, active: true }))
       .sort((left, right) => left.code.localeCompare(right.code));
   }
 
@@ -86,6 +95,13 @@ export class InMemorySnapshotStore implements SnapshotStore {
     return (project?.systems ?? [])
       .map((system) => ({ ...system, projectId, active: true }))
       .sort((left, right) => left.code.localeCompare(right.code));
+  }
+
+  async listAreas(projectId: string): Promise<Area[]> {
+    const project = this.stored?.snapshot.projects.find((item) => item.id === projectId);
+    return (project?.areas ?? [])
+      .map((area) => ({ ...area, projectId, active: true }))
+      .sort((left, right) => left.name.localeCompare(right.name));
   }
 }
 

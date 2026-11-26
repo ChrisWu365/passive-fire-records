@@ -36,6 +36,8 @@ export function draft(overrides: Partial<QueuedInspectionDraft> = {}): QueuedIns
       materials: 'Demo collar A',
       installationMethod: 'Fit one collar on each side of the wall.'
     },
+    areaId: null,
+    areaName: null,
     location: 'Level 2 riser',
     notes: 'Sealed on site.',
     status: 'DRAFT',
@@ -147,6 +149,8 @@ interface PlannedFailure {
 export class FakeInspectionServer implements InspectionApi {
   readonly records: Inspection[] = [];
   readonly calls: string[] = [];
+  /** The names the server copies onto a record for the area ids it knows; any other area is refused. */
+  readonly areaNames = new Map<string, string>();
   /** While true, the AI provider fails: the record is marked FAILED and the request answers 502. */
   aiProviderDown = false;
   private readonly planned: PlannedFailure[] = [];
@@ -178,6 +182,9 @@ export class FakeInspectionServer implements InspectionApi {
     return this.call('create', `create ${input.clientId ?? 'no-client-id'}`, () => {
       const existing = this.records.find((record) => record.clientId !== null && record.clientId === input.clientId);
       if (existing) return existing;
+      if (input.areaId !== undefined && !this.areaNames.has(input.areaId)) {
+        throw new ApiError('Area not found in this project', 422);
+      }
       const now = new Date().toISOString();
       const created: Inspection = {
         id: `5e5e5e5e-0000-4000-8000-${String(this.nextNumber++).padStart(12, '0')}`,
@@ -186,6 +193,8 @@ export class FakeInspectionServer implements InspectionApi {
         projectName: 'Harbour View Apartments',
         systemId: input.systemId,
         system: draft().system,
+        areaId: input.areaId ?? null,
+        areaName: input.areaId === undefined ? null : this.areaNames.get(input.areaId) ?? null,
         location: input.location,
         notes: input.notes,
         status: input.status,

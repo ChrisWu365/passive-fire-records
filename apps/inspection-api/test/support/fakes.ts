@@ -1,7 +1,12 @@
 import type { AiDraft, AiDraftGenerator } from '../../src/ai/ai-draft-generator.js';
 import { AiProviderError } from '../../src/ai/ai-draft-generator.js';
 import type { Inspection } from '../../src/inspections/inspection.js';
-import type { RegisterClient, RegisterProject, RegisterSystem } from '../../src/register/register-client.js';
+import type {
+  RegisterArea,
+  RegisterClient,
+  RegisterProject,
+  RegisterSystem
+} from '../../src/register/register-client.js';
 import { RegisterUnavailableError } from '../../src/register/register-client.js';
 
 export const PROJECT_ID = '11111111-1111-4111-8111-111111111111';
@@ -10,21 +15,27 @@ export const SYSTEM_ID = '33333333-3333-4333-8333-333333333333';
 export const SECOND_SYSTEM_ID = '44444444-4444-4444-8444-444444444444';
 export const OTHER_PROJECT_SYSTEM_ID = '55555555-5555-4555-8555-555555555555';
 export const UNKNOWN_ID = '99999999-9999-4999-8999-999999999999';
+export const AREA_ID = '66666666-6666-4666-8666-666666666666';
+export const SECOND_AREA_ID = '77777777-7777-4777-8777-777777777777';
+export const OTHER_PROJECT_AREA_ID = '88888888-8888-4888-8888-888888888888';
 
 export interface RegisterCall {
-  method: 'findProject' | 'findSystem';
+  method: 'findProject' | 'findSystem' | 'findArea';
   projectId: string;
   systemId?: string;
+  areaId?: string;
   bearerToken: string;
 }
 
 /**
  * Test double for the register service. It starts with one active project holding two active systems,
- * and a second project holding one system. Tests change that data, or set `unavailable`, to cover each answer.
+ * and a second project holding one system. The first project has two active areas and the second has one.
+ * Tests change that data, or set `unavailable`, to cover each answer.
  */
 export class FakeRegisterClient implements RegisterClient {
   readonly projects = new Map<string, RegisterProject>();
   readonly systems = new Map<string, RegisterSystem>();
+  readonly areas = new Map<string, RegisterArea>();
   readonly calls: RegisterCall[] = [];
   unavailable = false;
 
@@ -36,6 +47,15 @@ export class FakeRegisterClient implements RegisterClient {
     this.systems.set(
       OTHER_PROJECT_SYSTEM_ID,
       system(OTHER_PROJECT_SYSTEM_ID, OTHER_PROJECT_ID, 'SYS-01', 'Demo putty C')
+    );
+    this.areas.set(AREA_ID, { id: AREA_ID, projectId: PROJECT_ID, name: 'Level 4', active: true });
+    this.areas.set(
+      SECOND_AREA_ID,
+      { id: SECOND_AREA_ID, projectId: PROJECT_ID, name: 'Basement car park', active: true }
+    );
+    this.areas.set(
+      OTHER_PROJECT_AREA_ID,
+      { id: OTHER_PROJECT_AREA_ID, projectId: OTHER_PROJECT_ID, name: 'Level 1', active: true }
     );
   }
 
@@ -49,6 +69,13 @@ export class FakeRegisterClient implements RegisterClient {
     this.calls.push({ method: 'findSystem', projectId, systemId, bearerToken });
     this.failIfUnavailable();
     const found = this.systems.get(systemId);
+    return found && found.projectId === projectId ? found : undefined;
+  }
+
+  async findArea(projectId: string, areaId: string, bearerToken: string): Promise<RegisterArea | undefined> {
+    this.calls.push({ method: 'findArea', projectId, areaId, bearerToken });
+    this.failIfUnavailable();
+    const found = this.areas.get(areaId);
     return found && found.projectId === projectId ? found : undefined;
   }
 

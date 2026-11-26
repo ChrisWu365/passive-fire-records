@@ -1,6 +1,8 @@
 import { vi, type Mock } from 'vitest';
 import type { Api, AuthApi, InspectionApi, RegisterApi } from '../api/api';
 import type {
+  Area,
+  AreaInput,
   FirestopSystem,
   FirestopSystemInput,
   Inspection,
@@ -19,6 +21,10 @@ export const SYSTEM_ID = '33333333-3333-4333-8333-333333333333';
 export const SECOND_SYSTEM_ID = '44444444-4444-4444-8444-444444444444';
 export const INACTIVE_SYSTEM_ID = '55555555-5555-4555-8555-555555555555';
 export const INSPECTION_ID = '77777777-7777-4777-8777-777777777777';
+export const AREA_ID = '88888888-8888-4888-8888-888888888801';
+export const SECOND_AREA_ID = '88888888-8888-4888-8888-888888888802';
+export const INACTIVE_AREA_ID = '88888888-8888-4888-8888-888888888803';
+export const SECOND_PROJECT_AREA_ID = '88888888-8888-4888-8888-888888888804';
 
 export function userWithRole(role: Role): User {
   return { id: `user-${role.toLowerCase()}`, email: `${role.toLowerCase()}@example.com`, name: `Demo ${role}`, role };
@@ -59,6 +65,8 @@ export function storedInspection(overrides: Partial<Inspection> = {}): Inspectio
       materials: 'Demo collar A',
       installationMethod: 'Fit one collar on each side of the wall.'
     },
+    areaId: null,
+    areaName: null,
     location: 'Level 4, riser cupboard R4-12',
     notes: 'Pipe sealed after installation.',
     status: 'IN_PROGRESS',
@@ -84,13 +92,15 @@ export interface FakeApi extends Api {
   state: {
     projects: Project[];
     systems: FirestopSystem[];
+    areas: Area[];
     inspections: Inspection[];
   };
 }
 
 /**
  * An in-memory Api that behaves like the two services for the happy path. It starts with two active
- * projects and one inactive one; the first project has two active systems and one inactive system.
+ * projects and one inactive one; the first project has two active systems and one inactive system,
+ * and two active areas and one inactive area; the second project has one area.
  * Every method is a vi.fn, so a test can check the calls or make one call fail.
  */
 export function createFakeApi(): FakeApi {
@@ -107,6 +117,12 @@ export function createFakeApi(): FakeApi {
       system(SECOND_SYSTEM_ID, PROJECT_ID, 'SYS-02', 'Demo sealant B'),
       system(INACTIVE_SYSTEM_ID, PROJECT_ID, 'SYS-03', 'Demo putty C', false)
     ],
+    areas: [
+      { id: AREA_ID, projectId: PROJECT_ID, name: 'Level 3', active: true },
+      { id: SECOND_AREA_ID, projectId: PROJECT_ID, name: 'Basement car park', active: true },
+      { id: INACTIVE_AREA_ID, projectId: PROJECT_ID, name: 'Old site office', active: false },
+      { id: SECOND_PROJECT_AREA_ID, projectId: SECOND_PROJECT_ID, name: 'Ground floor', active: true }
+    ],
     inspections: []
   };
 
@@ -120,6 +136,12 @@ export function createFakeApi(): FakeApi {
     if (!found) throw new Error(`The fake has no inspection ${id}`);
     return found;
   };
+  /** The area fields a record gets from its input: the id and the register's current name, or none. */
+  const areaFor = (input: InspectionInput) => {
+    const area = state.areas.find((item) => item.id === input.areaId && item.projectId === input.projectId);
+    return { areaId: area?.id ?? null, areaName: area?.name ?? null };
+  };
+  const byName = (left: Area, right: Area) => left.name.localeCompare(right.name);
   const replaceInspection = (next: Inspection): Inspection => {
     state.inspections = state.inspections.map((item) => (item.id === next.id ? next : item));
     return next;
@@ -169,12 +191,28 @@ export function createFakeApi(): FakeApi {
         const updated: FirestopSystem = { ...existing, ...input, active: input.active ?? existing.active };
         state.systems = state.systems.map((item) => (item.id === systemId ? updated : item));
         return { ...updated };
+      }),
+      listAreas: vi.fn(async (projectId: string) =>
+        state.areas.filter((item) => item.projectId === projectId).sort(byName).map((item) => ({ ...item }))),
+      createArea: vi.fn(async (projectId: string, input: AreaInput) => {
+        const created: Area = { id: newId(), projectId, name: input.name, active: input.active ?? true };
+        state.areas = [...state.areas, created];
+        return { ...created };
+      }),
+      updateArea: vi.fn(async (projectId: string, areaId: string, input: AreaInput) => {
+        const existing = state.areas.find((item) => item.id === areaId && item.projectId === projectId);
+        if (!existing) throw new Error(`The fake register has no area ${areaId} in project ${projectId}`);
+        const updated: Area = { ...existing, name: input.name, active: input.active ?? existing.active };
+        state.areas = state.areas.map((item) => (item.id === areaId ? updated : item));
+        return { ...updated };
       })
     },
     inspections: {
       list: vi.fn(async () => state.inspections.map((item) => ({ ...item }))),
       create: vi.fn(async (input: InspectionInput) => {
-        const created = storedInspection({ ...input, ...referenceFor(input), id: newId(), status: input.status });
+        const created = storedInspection({
+          ...input, ...referenceFor(input), ...areaFor(input), id: newId(), status: input.status
+        });
         state.inspections = [created, ...state.inspections];
         return { ...created };
       }),
@@ -184,7 +222,11 @@ export function createFakeApi(): FakeApi {
         const reference = sameReference
           ? { projectName: existing.projectName, system: existing.system }
           : referenceFor(input);
-        return { ...replaceInspection({ ...existing, ...input, ...reference }) };
+        // A record keeps its own copy of the area's name while it still refers to the same area.
+        const area = sameReference && existing.areaId === (input.areaId ?? null)
+          ? { areaId: existing.areaId, areaName: existing.areaName }
+          : areaFor(input);
+        return { ...replaceInspection({ ...existing, ...input, ...reference, ...area }) };
       }),
       uploadPhotos: vi.fn(async (id: string, files: File[]) => {
         const existing = findInspection(id);

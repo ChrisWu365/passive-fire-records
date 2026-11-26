@@ -43,6 +43,8 @@ function newInspection(overrides: Partial<NewInspection> = {}): NewInspection {
       materials: 'Demo collar A',
       installationMethod: 'Fit one collar on each side of the wall.'
     },
+    areaId: null,
+    areaName: null,
     location: 'Level 4, riser cupboard R4-12',
     notes: 'Pipe sealed after installation.',
     status: 'IN_PROGRESS',

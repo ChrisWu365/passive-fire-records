@@ -43,6 +43,8 @@ function newInspection(clientId: string | null): NewInspection {
       materials: 'Demo collar A',
       installationMethod: 'Fit one collar on each side of the wall.'
     },
+    areaId: null,
+    areaName: null,
     location: 'Level 4',
     notes: '',
     status: 'DRAFT',
