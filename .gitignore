@@ -39,9 +39,14 @@ apps/inspection-web/coverage/
 !.env.example
 
 # Playwright
-apps/e2e/playwright-report/
-apps/e2e/test-results/
-apps/e2e/.cache/
+e2e/playwright-report/
+e2e/test-results/
+e2e/.cache/
+
+# TypeScript build output of the web app's tooling config
+*.tsbuildinfo
+apps/inspection-web/vite.config.js
+apps/inspection-web/vite.config.d.ts
 
 # IDE
 .idea/

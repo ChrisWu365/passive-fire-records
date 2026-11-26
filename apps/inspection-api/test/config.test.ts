@@ -25,7 +25,7 @@ test('every setting can be overridden from the environment', () => {
     DATABASE_URL,
     PORT: '4100',
     DATABASE_SCHEMA: 'inspection_dev',
-    REGISTER_SERVICE_URL: 'http://product-crud:8080/',
+    REGISTER_SERVICE_URL: 'http://register-api:8080/',
     REGISTER_TIMEOUT_MS: '500',
     UPLOAD_DIR: 'some/uploads',
     WEB_ORIGIN: 'https://a.example.com, https://b.example.com',
@@ -37,7 +37,7 @@ test('every setting can be overridden from the environment', () => {
 
   assert.equal(config.port, 4100);
   assert.equal(config.databaseSchema, 'inspection_dev');
-  assert.equal(config.registerServiceUrl, 'http://product-crud:8080');
+  assert.equal(config.registerServiceUrl, 'http://register-api:8080');
   assert.equal(config.registerTimeoutMs, 500);
   assert.equal(config.uploadDirectory, path.resolve('some/uploads'));
   assert.deepEqual(config.webOrigins, ['https://a.example.com', 'https://b.example.com']);
@@ -64,8 +64,8 @@ const invalid: Array<[string, Record<string, string>]> = [
   ['a PORT that is not a number', { PORT: 'http' }],
   ['a PORT above 65535', { PORT: '70000' }],
   ['a zero REGISTER_TIMEOUT_MS', { REGISTER_TIMEOUT_MS: '0' }],
-  ['a REGISTER_SERVICE_URL that is not a URL', { REGISTER_SERVICE_URL: 'product-crud' }],
-  ['a REGISTER_SERVICE_URL that is not http', { REGISTER_SERVICE_URL: 'ftp://product-crud' }],
+  ['a REGISTER_SERVICE_URL that is not a URL', { REGISTER_SERVICE_URL: 'register-api' }],
+  ['a REGISTER_SERVICE_URL that is not http', { REGISTER_SERVICE_URL: 'ftp://register-api' }],
   ['a DATABASE_SCHEMA that is not a plain identifier', { DATABASE_SCHEMA: 'inspection; drop schema public' }],
   ['an AI key without a provider URL', { AI_API_KEY: 'key' }],
   ['an AI provider URL without a key', { AI_PROVIDER_URL: 'https://ai.example.com' }],

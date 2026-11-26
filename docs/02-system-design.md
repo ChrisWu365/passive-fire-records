@@ -45,9 +45,8 @@ about a system.
 server. PostgreSQL in every profile: the `local` profile defaults to a PostgreSQL on the developer's
 machine, and the `test` profile starts a throwaway one with Testcontainers.
 
-**Packages:** `com.example.crud.register` replaces `com.example.crud.product`.
-The Maven artifact, image and Kubernetes names stay `product-crud` for now; see
-"Decisions taken, and what is left".
+**Location and names:** the service lives in `apps/register-api`. Its Maven artifact, image and
+Kubernetes resources are named `register-api`, and its root package is `com.chris.register`.
 
 **Tables (schema `register`)**
 
@@ -182,7 +181,7 @@ record was stored. Demo users stay in code.
   register service refuses to start without one.
 - For local development both services fall back to the same built-in value
   when `JWT_SECRET` is unset, so sign-in works across them with no setup.
-- In Kubernetes both Deployments read the secret from `inspection-secrets`,
+- In Kubernetes both Deployments read the secret from `auth-secrets`,
   which the deploy script creates before applying either.
 
 ## Supabase PostgreSQL
@@ -303,7 +302,7 @@ offline with whatever token it has; it only matters at sync time.
 | `TEST_DATABASE_URL` | Inspection tests | PostgreSQL the tests may create and drop throwaway schemas in; `npm test` fails without it |
 | `REGISTER_TIMEOUT_MS` | Inspection | Timeout for each register call; defaults to 3000 |
 | `LOG_LEVEL` | Inspection | `debug`, `info`, `warn` or `error`; defaults to `info` |
-| `REGISTER_SERVICE_URL` | Inspection | Address of the register service; defaults to `http://localhost:8080`, and is `http://product-crud:8080` in Kubernetes |
+| `REGISTER_SERVICE_URL` | Inspection | Address of the register service; defaults to `http://localhost:8080`, and is `http://register-api:8080` in Kubernetes |
 | `AI_API_KEY`, `AI_PROVIDER_URL`, `AI_MODEL` | Inspection | Gemini, optional (existing) |
 | `UPLOAD_DIR` | Inspection | Photo directory (existing) |
 
@@ -380,8 +379,9 @@ mock draft.
   service refuses to start without `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME` and `REGISTER_DATABASE_PASSWORD`,
   and says which are missing.
 - **Local development database:** any local PostgreSQL; the local Supabase stack or a `postgres` container.
-- **Not done: renaming** the Java artifact, image, Kubernetes resources and monitoring job from
-  `product-crud`. It is cosmetic, and touches CI, manifests, Grafana and the README.
+- **Layout and names:** the Java service moved from the repository root to `apps/register-api` under
+  the name `register-api`; the end-to-end suite moved to `e2e/`. The only deployment target is
+  Kubernetes; the Docker-host path was removed because it deployed the register alone.
 - **Not done: photo files in Supabase Storage.** They stay on the server volume.
 - **Not done: separate database roles.** The design calls for one role per schema; the deployment
   currently uses whatever role each connection string names.

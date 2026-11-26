@@ -1,0 +1,26 @@
+name: CI - Pull Request
+run-name: Validate PR #${{ github.event.pull_request.number }} by @${{ github.actor }}
+
+# Fast feedback gate. Runs the full test suites but never publishes an image and
+# never touches a deployment environment, so fork pull requests cannot reach any
+# secret.
+on:
+  pull_request:
+    branches: [ "staging", "main" ]
+    types: [ opened, synchronize, reopened ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  register-api:
+    name: Register API CI
+    uses: ./.github/workflows/_reusable-ci-register-api.yml
+
+  inspection:
+    name: Inspection CI
+    uses: ./.github/workflows/_reusable-ci-inspection.yml

@@ -24,7 +24,7 @@ function viteProxyTarget(prefix: string): string | undefined {
 
 describe('Gateway: Nginx', () => {
   it('AC-4.3 sends /api/register/ to the register service', () => {
-    expect(nginxLocation('/api/register/')).toMatch(/proxy_pass\s+http:\/\/product-crud:8080;/);
+    expect(nginxLocation('/api/register/')).toMatch(/proxy_pass\s+http:\/\/register-api:8080;/);
   });
 
   it('AC-4.3 sends every other /api/ path, /health and /uploads/ to the inspection service', () => {

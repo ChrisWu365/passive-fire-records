@@ -17,7 +17,7 @@ updates:
           - "*"
 
   - package-ecosystem: "maven"
-    directory: "/"
+    directory: "/apps/register-api"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -44,7 +44,7 @@ updates:
       - "inspection-web"
 
   - package-ecosystem: "npm"
-    directory: "/apps/e2e"
+    directory: "/e2e"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
@@ -53,7 +53,7 @@ updates:
       - "e2e"
 
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/apps/register-api"
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5

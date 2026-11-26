@@ -1,0 +1,57 @@
+spring:
+  config:
+    # Optional local file holding REGISTER_DATABASE_* values; see .env.example. Deployed environments set real
+    # environment variables instead.
+    import: "optional:file:.env[.properties]"
+  profiles:
+    default: local
+  datasource:
+    # No defaults here on purpose: outside the local and test profiles the service refuses to start without
+    # being told which database to use.
+    url: "${REGISTER_DATABASE_URL}"
+    username: "${REGISTER_DATABASE_USERNAME}"
+    password: "${REGISTER_DATABASE_PASSWORD}"
+    hikari:
+      maximum-pool-size: 5
+  flyway:
+    default-schema: "${register.database.schema}"
+    schemas: "${register.database.schema}"
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        default_schema: "${register.database.schema}"
+    open-in-view: false
+
+# The secret the inspection service signs tokens with. There is no default outside the local profile: the
+# service refuses to start without a secret of at least 32 bytes.
+register:
+  database:
+    # The PostgreSQL schema holding the register's tables. The end-to-end run uses a schema of its own.
+    schema: "${REGISTER_DATABASE_SCHEMA:register}"
+  security:
+    jwt-secret: "${JWT_SECRET:}"
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  level:
+    com.chris.register: INFO
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

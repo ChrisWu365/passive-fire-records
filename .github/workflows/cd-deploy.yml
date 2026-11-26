@@ -1,4 +1,5 @@
-name: CD Deploy
+name: CD - Deploy
+run-name: Deploy ${{ inputs.image_tag || github.ref_name }} to ${{ inputs.environment_name || 'production' }} by @${{ github.actor }}
 
 # Release and hotfix flow. Deploys an image that already exists in GHCR; it never
 # rebuilds, so the artifact that passed CI on the commit is the artifact that
@@ -8,14 +9,6 @@ on:
     tags: [ "v*.*.*" ]
   workflow_dispatch:
     inputs:
-      target:
-        description: Deployment target
-        required: true
-        default: kubernetes
-        type: choice
-        options:
-          - kubernetes
-          - docker
       environment_name:
         description: GitHub Environment that guards the deployment
         required: true
@@ -38,15 +31,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  resolve:
+  resolve-inputs:
     name: Resolve deployment inputs
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      target: ${{ steps.resolve.outputs.target }}
       environment_name: ${{ steps.resolve.outputs.environment_name }}
       spring_profile: ${{ steps.resolve.outputs.spring_profile }}
-      image: ${{ steps.resolve.outputs.image }}
+      register_api_image: ${{ steps.resolve.outputs.register_api_image }}
       tag: ${{ steps.resolve.outputs.tag }}
       inspection_api_image: ${{ steps.resolve.outputs.inspection_api_image }}
       inspection_web_image: ${{ steps.resolve.outputs.inspection_web_image }}
@@ -55,7 +47,6 @@ jobs:
         id: resolve
         shell: bash
         env:
-          INPUT_TARGET: ${{ inputs.target }}
           INPUT_ENVIRONMENT: ${{ inputs.environment_name }}
           INPUT_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
@@ -72,10 +63,9 @@ jobs:
             *) PROFILE=prod ;;
           esac
           {
-            echo "target=${INPUT_TARGET:-kubernetes}"
             echo "environment_name=${ENVIRONMENT}"
             echo "spring_profile=${PROFILE}"
-            echo "image=${IMAGE}"
+            echo "register_api_image=${IMAGE}-register-api"
             echo "tag=${TAG}"
             echo "inspection_api_image=${IMAGE}-inspection-api"
             echo "inspection_web_image=${IMAGE}-inspection-web"
@@ -83,16 +73,15 @@ jobs:
 
   deploy:
     name: Deploy
-    needs: resolve
-    uses: ./.github/workflows/_deploy.yml
+    needs: resolve-inputs
+    uses: ./.github/workflows/_reusable-deploy.yml
     with:
-      target: ${{ needs.resolve.outputs.target }}
-      environment_name: ${{ needs.resolve.outputs.environment_name }}
-      spring_profile: ${{ needs.resolve.outputs.spring_profile }}
-      image: ${{ needs.resolve.outputs.image }}
-      tag: ${{ needs.resolve.outputs.tag }}
-      inspection_api_image: ${{ needs.resolve.outputs.inspection_api_image }}
-      inspection_web_image: ${{ needs.resolve.outputs.inspection_web_image }}
+      environment_name: ${{ needs.resolve-inputs.outputs.environment_name }}
+      spring_profile: ${{ needs.resolve-inputs.outputs.spring_profile }}
+      register_api_image: ${{ needs.resolve-inputs.outputs.register_api_image }}
+      tag: ${{ needs.resolve-inputs.outputs.tag }}
+      inspection_api_image: ${{ needs.resolve-inputs.outputs.inspection_api_image }}
+      inspection_web_image: ${{ needs.resolve-inputs.outputs.inspection_web_image }}
     secrets: inherit
     permissions:
       contents: read

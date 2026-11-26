@@ -61,7 +61,7 @@ checked by hand on the deployed environment.
 
 ## Slice 1: Register service (Java)
 
-Replace the Product CRUD with projects and approved firestop systems, stored in
+Projects and their approved firestop systems, stored in
 Supabase PostgreSQL.
 
 **In scope**

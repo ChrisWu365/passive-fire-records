@@ -7,14 +7,14 @@
 # HTTPS is what makes the app installable and usable offline: browsers allow service workers and the
 # private file system only on HTTPS or localhost.
 #
-# This manifest is applied only when a public hostname is configured; see scripts/kubernetes/deploy-kubernetes.sh.
+# This manifest is applied only when a public hostname is configured; see scripts/deploy-kubernetes.sh.
 # The hostname must already resolve to this node, and ports 80 and 443 must be reachable from the internet,
 # or the certificate cannot be issued.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: web-gateway
-  namespace: product-crud
+  namespace: passive-fire
 data:
   Caddyfile: |
     {$PUBLIC_HOSTNAME} {
@@ -26,7 +26,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web-gateway
-  namespace: product-crud
+  namespace: passive-fire
 spec:
   replicas: 1
   # The pod binds the node's ports 80 and 443, so the old pod must stop before a new one can start.
@@ -114,7 +114,7 @@ spec:
             name: web-gateway
         - name: certificates
           hostPath:
-            path: /var/lib/product-crud/caddy-data
+            path: /var/lib/passive-fire/caddy-data
             type: DirectoryOrCreate
         - name: runtime-config
           emptyDir: {}

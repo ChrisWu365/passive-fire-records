@@ -21,6 +21,7 @@ Actions pipeline builds, tests and deploys all three.
 
 - [What it does](#what-it-does)
 - [Architecture](#architecture)
+- [Repository layout](#repository-layout)
 - [Try the offline flow](#try-the-offline-flow)
 - [Known simplifications](#known-simplifications)
 - [Technology stack](#technology-stack)
@@ -161,6 +162,26 @@ Other limits:
 The reasoning and the sources behind the business model are in
 [docs/01-business-logic.md](docs/01-business-logic.md).
 
+## Repository layout
+
+```
+apps/
+  register-api/      Register service: Java, Spring Boot (pom.xml, src/, Dockerfile)
+  inspection-api/    Inspection service: Node.js, TypeScript, Express
+  inspection-web/    Web app: React, Vite; its container's Nginx is also the gateway
+e2e/                 Playwright suite that runs the web app and both services together
+deployment/
+  kubernetes/        register.yml, inspection.yml, gateway.yml, monitoring.yml
+  compose/           local.yml and monitoring.yml, for running parts in Docker on one machine
+  monitoring/        Prometheus rules and Grafana dashboards, used by both of the above
+scripts/             Kubernetes install and deploy scripts, run on the VM
+docs/                Business logic, system design, slice spec
+```
+
+Each folder under `apps/` builds, tests and ships on its own. A product of this size would normally start
+as one modular service; it is split into two services here on purpose, to exercise a gateway, a call
+between services and separate databases.
+
 ## Technology stack
 
 **Register service**
@@ -211,9 +232,11 @@ Both services use PostgreSQL locally, as they do when deployed. There is no in-m
 ### 1. Clone
 
 ```bash
-git clone https://github.com/ChrisWu365/java-maven-crud-cicd.git
-cd java-maven-crud-cicd
+git clone <repository-url>
+cd <repository-folder>
 ```
+
+Copy the URL from the repository page's **Code** button.
 
 ### 2. Start a local PostgreSQL
 
@@ -232,12 +255,13 @@ supabase start
 ### 3. Run the register service
 
 ```bash
+cd apps/register-api
 mvn spring-boot:run
 ```
 
 With nothing configured, the default `local` profile connects to the local Supabase stack on port `54322`.
-For a different PostgreSQL, such as the plain Docker one above, copy `.env.example` to `.env` in the
-repository root and set the three `REGISTER_DATABASE_*` values. The first start creates the tables and a
+For a different PostgreSQL, such as the plain Docker one above, copy `.env.example` to `.env` in
+`apps/register-api` and set the three `REGISTER_DATABASE_*` values. The first start creates the tables and a
 seeded demo project.
 
 It listens on port `8080`. In the `local` profile:
@@ -293,7 +317,8 @@ as described in [Try the offline flow](#try-the-offline-flow).
 Not needed for development. To run the register against a hosted database:
 
 ```bash
-cp .env.example .env        # in the repository root; fill in the three REGISTER_DATABASE_* values
+cd apps/register-api
+cp .env.example .env        # fill in the three REGISTER_DATABASE_* values
 mvn spring-boot:run "-Dspring-boot.run.profiles=dev"
 ```
 
@@ -355,10 +380,10 @@ Interactive documentation: `/swagger-ui.html` on the register service (local, de
 
 | Suite | Command | Needs |
 | --- | --- | --- |
-| Register service | `mvn clean verify` in the repository root | Docker running; the tests start and remove their own PostgreSQL container |
+| Register service | `mvn clean verify` in `apps/register-api` | Docker running; the tests start and remove their own PostgreSQL container |
 | Inspection service | `npm test` in `apps/inspection-api` | `TEST_DATABASE_URL` in `.env` |
 | Web app | `npm test` in `apps/inspection-web` | Nothing |
-| End-to-end | `npm install && npx playwright install && npm test` in `apps/e2e` | A local PostgreSQL; JDK and Maven |
+| End-to-end | `npm install && npx playwright install && npm test` in `e2e` | A local PostgreSQL; JDK and Maven |
 
 What each level covers:
 
@@ -385,8 +410,8 @@ code; see [AGENTS.md](AGENTS.md) for the rule.
 
 ## Deployment
 
-The pipeline deploys three images to a single-node Kubernetes cluster on a VM: the register service
-(`product-crud`, the repository's original name), the inspection service and the web app.
+The pipeline deploys three images to a single-node Kubernetes cluster on a VM: the register service,
+the inspection service and the web app. Everything runs in the `passive-fire` namespace.
 
 ### What you must configure
 
@@ -398,7 +423,7 @@ In each GitHub Environment you deploy to (`development`, `staging`, `production`
 | `K8S_GHCR_USERNAME`, `K8S_GHCR_TOKEN` | Secret | Image pull from GHCR; the token needs `read:packages` |
 | `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME`, `REGISTER_DATABASE_PASSWORD` | Secret | The register's PostgreSQL, as a JDBC URL such as `jdbc:postgresql://<host>:5432/postgres?sslmode=require` |
 | `INSPECTION_DATABASE_URL` | Secret | The inspection service's PostgreSQL connection string |
-| `INSPECTION_JWT_SECRET` | Secret | Shared token signing secret, at least 32 bytes |
+| `JWT_SECRET` | Secret | Token signing secret shared by both services, at least 32 bytes |
 | `INSPECTION_AI_API_KEY`, `INSPECTION_AI_PROVIDER_URL`, `INSPECTION_AI_MODEL` | Secret | Optional Gemini settings |
 | `GRAFANA_ADMIN_PASSWORD` | Secret | Grafana administrator password |
 | `PUBLIC_HOSTNAME` | Variable | Optional. The hostname to serve over HTTPS; see below |
@@ -420,7 +445,7 @@ Set the `PUBLIC_HOSTNAME` environment variable and the deployment adds a Caddy p
 3. Set `PUBLIC_HOSTNAME` to that hostname, with no scheme, port or path.
 
 The app is then at `https://<PUBLIC_HOSTNAME>`. Certificates are kept on the VM under
-`/var/lib/product-crud/caddy-data`, so restarts do not request new ones.
+`/var/lib/passive-fire/caddy-data`, so restarts do not request new ones.
 
 Without `PUBLIC_HOSTNAME` the gateway is skipped and the web app is at `http://<K8S_VM_IP>:30173`.
 
@@ -430,10 +455,9 @@ Without `PUBLIC_HOSTNAME` the gateway is skipped and the web app is at `http://<
 | --- | --- |
 | `80`, `443` | Web app over HTTPS, when `PUBLIC_HOSTNAME` is set |
 | `30173` | Web app over plain HTTP |
-| `30080` | Register service directly (health and API) |
 | `30090`, `30030` | Prometheus and Grafana; restrict these to trusted networks |
 
-The inspection service is not exposed; it is reached only through the web app's Nginx.
+Neither service is exposed directly; both are reached only through the web app's Nginx.
 
 ### The cluster
 
@@ -442,29 +466,37 @@ the deploy script installs kubeadm, kubelet, kubectl and Flannel and initialises
 itself, provided the SSH user has passwordless `sudo`. To do it by hand:
 
 ```bash
-sudo bash scripts/kubernetes/install-kubernetes-ubuntu.sh --init-control-plane
+sudo bash scripts/install-kubernetes-ubuntu.sh --init-control-plane
 kubectl get nodes
 ```
 
-Photo files are kept on the VM under `/var/lib/product-crud/inspection-data`. Inspection records are in
+Photo files are kept on the VM under `/var/lib/passive-fire/inspection-data`. Inspection records are in
 PostgreSQL, not on the VM.
 
 To deploy by hand, export the same settings as environment variables and run:
 
 ```bash
-bash scripts/kubernetes/deploy-kubernetes.sh /home/<user>/app \
-  ghcr.io/<owner>/<repo>:sha-<commit> prod \
+bash scripts/deploy-kubernetes.sh /home/<user>/app \
+  ghcr.io/<owner>/<repo>-register-api:sha-<commit> prod \
   ghcr.io/<owner>/<repo>-inspection-api:sha-<commit> \
   ghcr.io/<owner>/<repo>-inspection-web:sha-<commit>
 ```
 
-### Docker Compose
+### Docker Compose, on one machine
 
-- `deployment/docker/docker-compose.yml` runs the register service alone on a Docker host. It needs
-  `JWT_SECRET` and the three `REGISTER_DATABASE_*` variables.
-- `deployment/inspection/docker-compose.yml` is a local shortcut that builds and runs the inspection
-  service and the web app. It needs `JWT_SECRET` and `DATABASE_URL`, and expects the register service on
-  the host at port 8080.
+These are local shortcuts, not a deployment target.
+
+- `deployment/compose/local.yml` builds and runs the whole system in containers: PostgreSQL, the register
+  service, the inspection service and the web app. It needs only `JWT_SECRET`:
+
+  ```bash
+  JWT_SECRET=<at least 32 characters> docker compose -f deployment/compose/local.yml up --build
+  ```
+
+  The app is then at http://localhost:8081, and because it is the built app on `localhost`, offline mode
+  works there.
+- `deployment/compose/monitoring.yml` runs Prometheus and Grafana against a register service on port 8080
+  of the same machine. It needs `GRAFANA_ADMIN_PASSWORD`.
 
 ### Recommended hardware
 
@@ -479,14 +511,14 @@ Build and test logic is defined once as reusable workflows and called by the tri
 
 | File | Trigger | Responsibility |
 | --- | --- | --- |
-| `pr-validation.yml` | Pull request to `staging` or `main` | Tests only. Never publishes or deploys |
-| `ci-main.yml` | Push to `dev`, `staging`, `main`; manual | Tests, publishes the three images, then deploys that exact tag |
-| `cd-deploy.yml` | Tag `v*.*.*`; manual | Deploys an image that already exists. Never rebuilds |
-| `scheduled-tasks.yml` | Nightly; manual | `npm audit` per app and a Trivy scan of the published images |
-| `_ci-spring.yml` | Called | `mvn verify`: tests, Checkstyle, PMD, SpotBugs |
-| `_ci-inspection.yml` | Called | TypeScript builds, unit tests with a PostgreSQL container, Playwright end-to-end tests |
-| `_build-images.yml` | Called | Buildx build and GHCR push under an immutable `sha-<commit>` tag |
-| `_deploy.yml` | Called | Kubernetes or Docker deployment over SSH, behind an environment gate |
+| `ci-pr.yml` | Pull request to `staging` or `main` | Tests only. Never publishes or deploys |
+| `ci-branch.yml` | Push to `dev`, `staging`, `main`; manual | Tests, publishes the three images, then deploys that exact tag |
+| `cd-deploy.yml` | Tag `v*.*.*`; manual | Deploys images that already exist. Never rebuilds |
+| `cron-security-scan.yml` | Nightly; manual | `npm audit` per app and a Trivy scan of the published images |
+| `_reusable-ci-register-api.yml` | Called | `mvn verify` in `apps/register-api`: tests, Checkstyle, PMD, SpotBugs |
+| `_reusable-ci-inspection.yml` | Called | TypeScript builds, unit tests with a PostgreSQL container, Playwright end-to-end tests |
+| `_reusable-build-images.yml` | Called | Buildx build and GHCR push under an immutable `sha-<commit>` tag |
+| `_reusable-deploy.yml` | Called | Kubernetes deployment over SSH, behind an environment gate |
 
 | Event | Branch | GitHub Environment | Behaviour |
 | --- | --- | --- | --- |
@@ -494,24 +526,53 @@ Build and test logic is defined once as reusable workflows and called by the tri
 | Push | `dev` | `development` | Validate, publish, deploy |
 | Push | `staging` | `staging` | Validate, publish, deploy |
 | Push | `main` | `production` | Validate, publish, wait for approval, deploy |
-| Tag `v*.*.*` | — | `production` | Deploy the existing image of the tagged commit |
+| Tag `v*.*.*` | — | `production` | Deploy the existing images of the tagged commit |
 
-Guarantees:
+### Conventions the workflows follow
+
+**Naming**
+
+- Files are lowercase kebab-case with the `.yml` extension, prefixed by what starts them: `ci-` for
+  validation and branch builds, `cd-` for deployments of existing images, `cron-` for scheduled work.
+- Reusable workflows (`on: workflow_call`) start with `_reusable-`, so they sort apart from the workflows
+  that have triggers of their own.
+- Workflow names mirror the file name (`CI - Pull Request`, `CD - Deploy`). Trigger workflows set a
+  `run-name` with the branch or pull request and the person, so the Actions tab can be scanned.
+- Job ids are kebab-case (`build-images`, `e2e-test`); job and step names are sentences that start with a
+  verb. Inputs and outputs are snake_case.
+- Secrets and variables are SCREAMING_SNAKE_CASE, prefixed by what they belong to (`K8S_`, `REGISTER_`,
+  `INSPECTION_`); `JWT_SECRET` has no prefix because both services share it.
+
+**Structure**
+
+- Each kind of work is defined once in a reusable workflow; trigger workflows only decide when it runs
+  and with which inputs.
+- Images are built once per commit and deployed by tag, so what passed the tests is what ships.
+- Every job has a timeout. Every workflow has a concurrency group: superseded pull request runs are
+  cancelled, builds and deployments are never cancelled midway.
+
+**Caching**
+
+- Maven and npm dependencies are cached by lock file through `setup-java` and `setup-node`.
+- Image layers are cached per image with the Buildx GitHub Actions cache.
+- Playwright browsers are cached by Playwright version.
+
+**Security**
 
 - Actions are pinned to commit SHAs; Dependabot bumps them with the Maven, npm and Docker dependencies.
 - Every workflow starts from `contents: read` and adds only what a job needs.
-- Images are built once per commit and deployed by tag, so what passed the tests is what ships.
+- Deployment secrets live in GitHub Environments; `production` waits for approval.
 - Pull requests from forks reach no secret.
 
 ## Monitoring
 
 The Kubernetes deployment includes Prometheus (NodePort `30090`) and Grafana (NodePort `30030`), with a
 provisioned dashboard for the register service: request rate, error ratio, p95 latency, JVM heap, CPU and
-threads. Prometheus scrapes `product-crud:8080/actuator/prometheus` inside the cluster and has alert rules
+threads. Prometheus scrapes `register-api:8080/actuator/prometheus` inside the cluster and has alert rules
 for an unavailable target, a high 5xx rate and high heap usage. There is no Alertmanager.
 
-The health and metrics endpoints of the register service are open without a token; restrict port `30080`
-to trusted networks in a real deployment. The inspection service logs one JSON object per line.
+The health and metrics endpoints of the register service need no token, and are reachable only inside
+the cluster. The inspection service logs one JSON object per line.
 
 ## Troubleshooting
 
@@ -522,6 +583,10 @@ Outside the `local` and `test` profiles it needs `REGISTER_DATABASE_URL`, `REGIS
 **The register service stops locally with "Connection to 127.0.0.1:54322 refused".**
 The `local` profile expects the local Supabase stack. Start it with `supabase start`, or point
 `REGISTER_DATABASE_*` in `.env` at another PostgreSQL.
+
+**`docker compose ... up --build` fails with "additional privileges requested" or "failed to execute bake".**
+Newer Docker versions ask for permission to read build folders outside the folder holding the compose file,
+and a non-interactive shell cannot answer. Set `BUILDX_BAKE_ENTITLEMENTS_FS=0` for that command.
 
 **`mvn verify` fails with "Could not find a valid Docker environment".**
 The register tests start a PostgreSQL container. Start Docker and run the build again.
@@ -551,7 +616,7 @@ You are on the dev server, or on plain HTTP. Use the built app on `localhost`, o
 
 **The HTTPS gateway does not get a certificate.**
 The hostname must resolve to the VM and ports 80 and 443 must be reachable from the internet. Check with
-`kubectl -n product-crud logs deployment/web-gateway`.
+`kubectl -n passive-fire logs deployment/web-gateway`.
 
 **A hosted Supabase project stops answering.**
 Free projects pause after a period of inactivity; resume the project in the Supabase dashboard.
@@ -563,15 +628,15 @@ that the image tag exists.
 **A pod does not become ready.**
 
 ```bash
-kubectl -n product-crud get pods
-kubectl -n product-crud describe pod -l app=product-crud
-kubectl -n product-crud logs -l app=product-crud --tail=200
-kubectl -n product-crud logs -l app=inspection-api --tail=200
+kubectl -n passive-fire get pods
+kubectl -n passive-fire describe pod -l app=register-api
+kubectl -n passive-fire logs -l app=register-api --tail=200
+kubectl -n passive-fire logs -l app=inspection-api --tail=200
 ```
 
 **Photo uploads fail with `EACCES` on the VM.**
 The inspection pod's init container aligns the ownership of the photo directory on every start. To repair
-a running pod, run `sudo chown -R 1000:1000 /var/lib/product-crud/inspection-data` on the node.
+a running pod, run `sudo chown -R 1000:1000 /var/lib/passive-fire/inspection-data` on the node.
 
 ## Design documents
 

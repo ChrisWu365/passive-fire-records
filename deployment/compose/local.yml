@@ -1,0 +1,79 @@
+# The whole system in containers on one machine: PostgreSQL, the register service, the inspection service
+# and the web app, wired together by service name exactly as in Kubernetes.
+#
+#   JWT_SECRET=<at least 32 characters> docker compose -f deployment/compose/local.yml up --build
+#
+# Then open http://localhost:8081. The database password below is for this throwaway local database only.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  register-api:
+    build:
+      context: ../../apps/register-api
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      REGISTER_DATABASE_URL: jdbc:postgresql://postgres:5432/postgres
+      REGISTER_DATABASE_USERNAME: postgres
+      REGISTER_DATABASE_PASSWORD: postgres
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a value of at least 32 characters}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  inspection-api:
+    build:
+      context: ../../apps/inspection-api
+    environment:
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to a value of at least 32 characters}
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/postgres
+      REGISTER_SERVICE_URL: http://register-api:8080
+      AI_PROVIDER_URL: ${AI_PROVIDER_URL:-}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      register-api:
+        condition: service_healthy
+    volumes:
+      - inspection-data:/app/data
+    expose:
+      - "4000"
+    restart: unless-stopped
+
+  # The web app's Nginx is the single entry point: it serves the app and routes /api/register/ to the
+  # register service and the rest of /api/ to the inspection service.
+  inspection-web:
+    build:
+      context: ../../apps/inspection-web
+    depends_on:
+      - inspection-api
+      - register-api
+    ports:
+      - "8081:80"
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  inspection-data:

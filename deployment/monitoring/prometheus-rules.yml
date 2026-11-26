@@ -1,35 +1,35 @@
 groups:
-  - name: product-crud
+  - name: register-api
     rules:
-      - alert: ProductCrudTargetDown
-        expr: up{job="product-crud"} == 0
+      - alert: RegisterApiTargetDown
+        expr: up{job="register-api"} == 0
         for: 2m
         labels:
           severity: critical
         annotations:
-          summary: Product CRUD metrics target is down
-          description: Prometheus cannot scrape the product-crud application.
-      - alert: ProductCrudHighErrorRate
+          summary: Register API metrics target is down
+          description: Prometheus cannot scrape the register-api application.
+      - alert: RegisterApiHighErrorRate
         expr: |
           (
-            sum(rate(http_server_requests_seconds_count{job="product-crud",status=~"5.."}[5m]))
+            sum(rate(http_server_requests_seconds_count{job="register-api",status=~"5.."}[5m]))
             /
-            sum(rate(http_server_requests_seconds_count{job="product-crud"}[5m]))
+            sum(rate(http_server_requests_seconds_count{job="register-api"}[5m]))
           ) > 0.05
         for: 5m
         labels:
           severity: warning
         annotations:
-          summary: Product CRUD HTTP error rate is high
+          summary: Register API HTTP error rate is high
           description: More than 5% of requests returned HTTP 5xx for five minutes.
-      - alert: ProductCrudHighJvmMemory
+      - alert: RegisterApiHighJvmMemory
         expr: |
-          sum(jvm_memory_used_bytes{job="product-crud",area="heap"})
+          sum(jvm_memory_used_bytes{job="register-api",area="heap"})
           /
-          sum(jvm_memory_max_bytes{job="product-crud",area="heap"}) > 0.85
+          sum(jvm_memory_max_bytes{job="register-api",area="heap"}) > 0.85
         for: 10m
         labels:
           severity: warning
         annotations:
-          summary: Product CRUD JVM heap usage is high
+          summary: Register API JVM heap usage is high
           description: JVM heap usage is above 85% for ten minutes.

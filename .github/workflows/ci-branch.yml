@@ -1,0 +1,53 @@
+name: CI - Branch
+run-name: Build and deploy ${{ github.ref_name }} by @${{ github.actor }}
+
+# Branch integration flow: validate, publish the three images under an immutable
+# tag, then deploy the same tag. Build happens exactly once per commit.
+on:
+  push:
+    branches: [ "dev", "staging", "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Do not cancel an in-flight build or deployment when a new commit lands.
+  group: ci-branch-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  register-api:
+    name: Register API CI
+    uses: ./.github/workflows/_reusable-ci-register-api.yml
+
+  inspection:
+    name: Inspection CI
+    uses: ./.github/workflows/_reusable-ci-inspection.yml
+
+  build-images:
+    name: Build and publish images
+    needs: [ register-api, inspection ]
+    uses: ./.github/workflows/_reusable-build-images.yml
+    with:
+      # Only the production branch moves `latest`; feature branches must not.
+      push_latest: ${{ github.ref == 'refs/heads/main' }}
+    permissions:
+      contents: read
+      packages: write
+
+  deploy:
+    name: Deploy
+    needs: [ build-images ]
+    uses: ./.github/workflows/_reusable-deploy.yml
+    with:
+      environment_name: ${{ github.ref_name == 'dev' && 'development' || github.ref_name == 'staging' && 'staging' || 'production' }}
+      spring_profile: ${{ github.ref_name == 'dev' && 'dev' || github.ref_name == 'staging' && 'staging' || 'prod' }}
+      register_api_image: ${{ needs.build-images.outputs.register_api_image }}
+      tag: ${{ needs.build-images.outputs.tag }}
+      inspection_api_image: ${{ needs.build-images.outputs.inspection_api_image }}
+      inspection_web_image: ${{ needs.build-images.outputs.inspection_web_image }}
+    secrets: inherit
+    permissions:
+      contents: read
+      packages: read
