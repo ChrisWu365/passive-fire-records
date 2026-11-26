@@ -103,7 +103,7 @@ test('AC-4.3 the whole online flow works through one origin: create, photo, AI d
   await expect(page.getByText(/not a compliance decision/)).toBeVisible();
 
   await page.getByLabel('Inspection notes').fill(`Checked again ${suffix}`);
-  await page.getByLabel('Status').selectOption('COMPLETED');
+  await page.getByLabel('Status', { exact: true }).selectOption('COMPLETED');
   await page.getByRole('button', { name: 'Save inspection' }).click();
   await expect(page.getByText('Saved')).toBeVisible();
   await page.getByRole('button', { name: 'Close', exact: true }).click();
