@@ -1,4 +1,6 @@
-import type { Inspection, Status } from '../api/types';
+import { useState } from 'react';
+import { STATUSES, type Inspection, type Status } from '../api/types';
+import { Pager } from '../components/Pager';
 
 interface InspectionListProps {
   inspections: Inspection[];
@@ -6,9 +8,44 @@ interface InspectionListProps {
   onOpen: (inspection: Inspection) => void;
 }
 
-/** The summary tiles and the table of records, most recently updated first. */
+/** The status filter's value: one status, or the empty string for every status. */
+type StatusFilter = Status | '';
+
+const PAGE_SIZE = 25;
+const FIRST_PAGE = 1;
+const NO_MATCH = 'No inspections match.';
+
+function statusLabel(status: Status): string {
+  return status.replace('_', ' ');
+}
+
+function matches(inspection: Inspection, query: string, status: StatusFilter): boolean {
+  if (status && inspection.status !== status) return false;
+  return `${inspection.projectName} ${inspection.location}`.toLowerCase().includes(query);
+}
+
+/**
+ * The summary tiles and the table of records, in the order given (most recently updated first). The table
+ * can be searched, filtered by status and is shown a page at a time; the tiles always count every record.
+ */
 export function InspectionList({ inspections, loading, onOpen }: InspectionListProps) {
-  const countWithStatus = (status: Status) => inspections.filter((item) => item.status === status).length;
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState<StatusFilter>('');
+  const [requestedPage, setRequestedPage] = useState(FIRST_PAGE);
+
+  const query = search.trim().toLowerCase();
+  const narrowed = query !== '' || status !== '';
+  const matching = narrowed ? inspections.filter((item) => matches(item, query, status)) : inspections;
+  const pageCount = Math.max(FIRST_PAGE, Math.ceil(matching.length / PAGE_SIZE));
+  // The list can shrink under the user (a reload, a deletion), so the page asked for may no longer exist.
+  const page = Math.min(requestedPage, pageCount);
+  const shown = matching.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const countText = narrowed
+    ? `${matching.length} of ${inspections.length} records`
+    : `${inspections.length} records`;
+
+  const countWithStatus = (wanted: Status) => inspections.filter((item) => item.status === wanted).length;
+
   return (
     <>
       <div className="stats">
@@ -20,10 +57,31 @@ export function InspectionList({ inspections, loading, onOpen }: InspectionListP
         <div className="panel-heading">
           <div>
             <h3>Recent inspections</h3>
-            <span className="muted">
-              Evidence register · {loading ? 'Refreshing…' : `${inspections.length} records`}
-            </span>
+            <span className="muted">Evidence register · {loading ? 'Refreshing…' : countText}</span>
           </div>
+        </div>
+        <div className="list-tools">
+          <input
+            type="search"
+            aria-label="Search inspections"
+            placeholder="Search by project or location"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setRequestedPage(FIRST_PAGE);
+            }}
+          />
+          <select
+            aria-label="Filter by status"
+            value={status}
+            onChange={(event) => {
+              setStatus(event.target.value as StatusFilter);
+              setRequestedPage(FIRST_PAGE);
+            }}
+          >
+            <option value="">All</option>
+            {STATUSES.map((option) => <option key={option} value={option}>{statusLabel(option)}</option>)}
+          </select>
         </div>
         <div className="table-wrap">
           <table>
@@ -31,7 +89,7 @@ export function InspectionList({ inspections, loading, onOpen }: InspectionListP
               <tr><th>Project / location</th><th>Status</th><th>Inspector</th><th>Updated</th><th /></tr>
             </thead>
             <tbody>
-              {inspections.map((inspection) => (
+              {shown.map((inspection) => (
                 <tr key={inspection.id}>
                   <td>
                     <strong>{inspection.projectName}</strong>
@@ -46,6 +104,8 @@ export function InspectionList({ inspections, loading, onOpen }: InspectionListP
             </tbody>
           </table>
         </div>
+        {narrowed && matching.length === 0 && <p className="muted list-empty">{NO_MATCH}</p>}
+        <Pager page={page} pageCount={pageCount} onChange={setRequestedPage} />
       </section>
     </>
   );
@@ -56,5 +116,5 @@ function Stat({ label, value, tone = '' }: { label: string; value: number; tone?
 }
 
 function StatusBadge({ status }: { status: Status }) {
-  return <span className={`status ${status.toLowerCase()}`}>{status.replace('_', ' ')}</span>;
+  return <span className={`status ${status.toLowerCase()}`}>{statusLabel(status)}</span>;
 }

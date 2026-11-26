@@ -1,14 +1,15 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { FirestopSystem, FirestopSystemInput } from '../api/types';
 import { Field } from '../components/Field';
+import { Modal } from '../components/Modal';
 import { ErrorAlert, fieldMessagesOf, messageOf } from '../components/feedback';
 
-interface SystemFormProps {
-  /** The system being edited, or null when the form adds a new one. */
+interface SystemDialogProps {
+  /** The system being edited, or null when the dialog adds a new one. */
   editing: FirestopSystem | null;
   /** Stores the system. Rejects with the server's error when it is refused. */
   onSubmit: (input: FirestopSystemInput) => Promise<void>;
-  onCancelEdit: () => void;
+  onClose: () => void;
 }
 
 type Draft = Required<Omit<FirestopSystemInput, 'active'>>;
@@ -39,20 +40,14 @@ function draftFrom(system: FirestopSystem): Draft {
 }
 
 /**
- * Adds a system to the selected project, or edits one. Validation is the register's: its field messages
- * are shown beside the fields, and what the user typed is kept so they can correct it.
+ * The dialog that adds a system to the selected project, or edits one. Validation is the register's: its
+ * messages are shown beside the fields, and the dialog stays open with what the user typed.
  */
-export function SystemForm({ editing, onSubmit, onCancelEdit }: SystemFormProps) {
-  const [draft, setDraft] = useState<Draft>(EMPTY);
+export function SystemDialog({ editing, onSubmit, onClose }: SystemDialogProps) {
+  const [draft, setDraft] = useState<Draft>(editing ? draftFrom(editing) : EMPTY);
   const [error, setError] = useState('');
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    setDraft(editing ? draftFrom(editing) : EMPTY);
-    setError('');
-    setFieldErrors({});
-  }, [editing]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -61,20 +56,17 @@ export function SystemForm({ editing, onSubmit, onCancelEdit }: SystemFormProps)
     setFieldErrors({});
     try {
       await onSubmit(draft);
-      setDraft(EMPTY);
     } catch (failure) {
       setFieldErrors(fieldMessagesOf(failure));
       setError(messageOf(failure, 'The system could not be saved'));
-    } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <form className="register-form" onSubmit={submit}>
-      <h4>{editing ? `Edit ${editing.code}` : 'Add a system'}</h4>
-      <ErrorAlert message={error} />
-      <div className="form-grid">
+    <Modal title={editing ? `Edit ${editing.code}` : 'New system'} eyebrow="FIRESTOP SYSTEM" onClose={onClose}>
+      <form onSubmit={submit}>
+        <ErrorAlert message={error} />
         {FIELDS.map(({ name, label, multiline }) => (
           <Field key={name} label={label} error={fieldErrors[name]}>
             {({ id, describedBy }) => {
@@ -85,15 +77,15 @@ export function SystemForm({ editing, onSubmit, onCancelEdit }: SystemFormProps)
                 value: draft[name],
                 onChange: (event: { target: { value: string } }) => setDraft({ ...draft, [name]: event.target.value })
               };
-              return multiline ? <textarea rows={2} {...shared} /> : <input {...shared} />;
+              return multiline ? <textarea rows={3} {...shared} /> : <input {...shared} />;
             }}
           </Field>
         ))}
-      </div>
-      <div className="form-actions">
-        <button className="button primary" disabled={submitting}>{editing ? 'Save system' : 'Add system'}</button>
-        {editing && <button type="button" className="button ghost" onClick={onCancelEdit}>Cancel edit</button>}
-      </div>
-    </form>
+        <div className="modal-actions">
+          <button type="button" className="button ghost" onClick={onClose}>Cancel</button>
+          <button className="button primary" disabled={submitting}>{editing ? 'Save system' : 'Add system'}</button>
+        </div>
+      </form>
+    </Modal>
   );
 }

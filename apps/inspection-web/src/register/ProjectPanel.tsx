@@ -1,47 +1,55 @@
-import { useState, type FormEvent } from 'react';
-import type { Project, ProjectInput } from '../api/types';
-import { Field } from '../components/Field';
-import { ErrorAlert, fieldMessagesOf, messageOf } from '../components/feedback';
+import { useState } from 'react';
+import type { Project } from '../api/types';
 
 interface ProjectPanelProps {
   projects: Project[];
   selectedId: string | null;
   onSelect: (projectId: string) => void;
-  /** Stores a new project. Rejects with the server's error when it is refused. */
-  onCreate: (input: ProjectInput) => Promise<void>;
+  /** Called when the user asks to add a project. */
+  onNew: () => void;
 }
 
-const EMPTY = { code: '', name: '', address: '' };
+const NO_PROJECTS = 'No projects yet.';
+const NO_MATCH = 'No projects match.';
 
-/** The list of projects, and the form that adds one. */
-export function ProjectPanel({ projects, selectedId, onSelect, onCreate }: ProjectPanelProps) {
-  const [draft, setDraft] = useState(EMPTY);
-  const [error, setError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-  const [submitting, setSubmitting] = useState(false);
+function matches(project: Project, query: string): boolean {
+  return `${project.code} ${project.name}`.toLowerCase().includes(query);
+}
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setSubmitting(true);
-    setError('');
-    setFieldErrors({});
-    const address = draft.address.trim();
-    try {
-      await onCreate({ code: draft.code.trim(), name: draft.name.trim(), ...(address ? { address } : {}) });
-      setDraft(EMPTY);
-    } catch (failure) {
-      setFieldErrors(fieldMessagesOf(failure));
-      setError(messageOf(failure, 'The project could not be added'));
-    } finally {
-      setSubmitting(false);
-    }
-  };
+/**
+ * The list of projects, with a search box and the button that adds one. Inactive projects are listed only
+ * while "Show inactive" is ticked, except the selected project, which never disappears from under the user.
+ */
+export function ProjectPanel({ projects, selectedId, onSelect, onNew }: ProjectPanelProps) {
+  const [search, setSearch] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
+
+  const query = search.trim().toLowerCase();
+  const visible = projects.filter((project) =>
+    (showInactive || project.active || project.id === selectedId) && matches(project, query));
 
   return (
     <section className="panel register-panel">
-      <div className="panel-heading"><h3>Projects</h3></div>
-      <ul className="project-list">
-        {projects.map((project) => (
+      <div className="panel-heading register-heading">
+        <h3>Projects</h3>
+        <button type="button" className="button primary" onClick={onNew}>New project</button>
+      </div>
+      <div className="list-tools">
+        <input
+          type="search"
+          aria-label="Search projects"
+          placeholder="Search by code or name"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+        />
+        <label className="check">
+          <input type="checkbox" checked={showInactive} onChange={(event) => setShowInactive(event.target.checked)} />
+          Show inactive
+        </label>
+      </div>
+      {visible.length === 0 && <p className="muted register-empty">{projects.length === 0 ? NO_PROJECTS : NO_MATCH}</p>}
+      <ul className="project-list" aria-label="Projects">
+        {visible.map((project) => (
           <li key={project.id}>
             <button
               type="button"
@@ -55,43 +63,6 @@ export function ProjectPanel({ projects, selectedId, onSelect, onCreate }: Proje
           </li>
         ))}
       </ul>
-      <form className="register-form" onSubmit={submit}>
-        <h4>Add a project</h4>
-        <ErrorAlert message={error} />
-        <Field label="Project code" error={fieldErrors.code}>
-          {({ id, describedBy }) => (
-            <input
-              id={id}
-              aria-describedby={describedBy}
-              required
-              value={draft.code}
-              onChange={(event) => setDraft({ ...draft, code: event.target.value })}
-            />
-          )}
-        </Field>
-        <Field label="Project name" error={fieldErrors.name}>
-          {({ id, describedBy }) => (
-            <input
-              id={id}
-              aria-describedby={describedBy}
-              required
-              value={draft.name}
-              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-            />
-          )}
-        </Field>
-        <Field label="Address" error={fieldErrors.address}>
-          {({ id, describedBy }) => (
-            <input
-              id={id}
-              aria-describedby={describedBy}
-              value={draft.address}
-              onChange={(event) => setDraft({ ...draft, address: event.target.value })}
-            />
-          )}
-        </Field>
-        <button className="button primary" disabled={submitting}>Add project</button>
-      </form>
     </section>
   );
 }

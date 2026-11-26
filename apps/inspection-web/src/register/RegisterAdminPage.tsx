@@ -6,10 +6,20 @@ import { OfflineNotice } from '../offline/OfflineNotice';
 import { useOffline } from '../offline/offline-context';
 import { isNetworkFailure } from '../offline/reachability';
 import { useOnline } from '../offline/use-online';
+import { ProjectDialog } from './ProjectDialog';
 import { ProjectPanel } from './ProjectPanel';
-import { SystemForm } from './SystemForm';
+import { SystemDialog } from './SystemDialog';
 import { SystemTable } from './SystemTable';
 
+/** Which dialog is open, and for an edit, what it is editing. */
+type OpenDialog =
+  | { kind: 'none' }
+  | { kind: 'new-project' }
+  | { kind: 'edit-project'; project: Project }
+  | { kind: 'new-system' }
+  | { kind: 'edit-system'; system: FirestopSystem };
+
+const NO_DIALOG: OpenDialog = { kind: 'none' };
 const NEEDS_CONNECTION = 'You are offline. The register can be viewed and changed only while online.';
 
 function byCode<T extends { code: string }>(left: T, right: T): number {
@@ -32,7 +42,8 @@ function systemInput(system: FirestopSystem, active: boolean): FirestopSystemInp
 
 /**
  * Admin screen for the register: the list of projects, and for the selected project its approved firestop
- * systems, with forms to add, edit, deactivate and reactivate them. It reads and writes through useApi().
+ * systems. Adding and editing happen in dialogs opened from each panel's heading. It reads and writes
+ * through useApi().
  */
 export function RegisterAdminPage() {
   const { register } = useApi();
@@ -43,7 +54,7 @@ export function RegisterAdminPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [systems, setSystems] = useState<FirestopSystem[]>([]);
-  const [editing, setEditing] = useState<FirestopSystem | null>(null);
+  const [dialog, setDialog] = useState<OpenDialog>(NO_DIALOG);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
 
@@ -72,7 +83,7 @@ export function RegisterAdminPage() {
 
   useEffect(() => {
     setSystems([]);
-    setEditing(null);
+    setDialog(NO_DIALOG);
     setActionError('');
     if (!selectedId) return undefined;
     let cancelled = false;
@@ -90,16 +101,26 @@ export function RegisterAdminPage() {
     const created = await register.createProject(input);
     setProjects((current) => upsert(current, created));
     setSelectedId(created.id);
+    setDialog(NO_DIALOG);
   };
 
-  const submitSystem = async (input: FirestopSystemInput) => {
+  /** Saves the edited details. The dialog does not offer the active state, so it is kept as it is. */
+  const saveProject = async (project: Project, input: ProjectInput) => {
+    const saved = await register.updateProject(project.id, { ...input, active: project.active });
+    setProjects((current) => upsert(current, saved));
+    setDialog(NO_DIALOG);
+  };
+
+  const saveSystem = async (editing: FirestopSystem | null, input: FirestopSystemInput) => {
     if (!selected) return;
     const saved = editing
       ? await register.updateSystem(selected.id, editing.id, input)
       : await register.createSystem(selected.id, input);
     setSystems((current) => upsert(current, saved));
-    setEditing(null);
+    setDialog(NO_DIALOG);
   };
+
+  const closeDialog = () => setDialog(NO_DIALOG);
 
   /** Runs a one-click change and reports a failure in the page's own alert. */
   const attempt = async (change: () => Promise<void>, fallback: string) => {
@@ -135,30 +156,71 @@ export function RegisterAdminPage() {
       </ErrorAlert>
       {waitingForConnection && <OfflineNotice message={NEEDS_CONNECTION} />}
       <div className="register-layout">
-        <ProjectPanel projects={projects} selectedId={selectedId} onSelect={setSelectedId} onCreate={createProject} />
+        <ProjectPanel
+          projects={projects}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onNew={() => setDialog({ kind: 'new-project' })}
+        />
         <section className="panel register-panel">
           {selected ? (
             <>
               <div className="panel-heading register-heading">
                 <h3>Approved systems for {selected.name}</h3>
-                <button
-                  type="button"
-                  className="button ghost"
-                  aria-label={`${selected.active ? 'Deactivate' : 'Reactivate'} project ${selected.code}`}
-                  onClick={() => void toggleProject(selected)}
-                >
-                  {selected.active ? 'Deactivate project' : 'Reactivate project'}
-                </button>
+                <div className="form-actions">
+                  <button
+                    type="button"
+                    className="button ghost"
+                    aria-label={`Edit project ${selected.code}`}
+                    onClick={() => setDialog({ kind: 'edit-project', project: selected })}
+                  >
+                    Edit project
+                  </button>
+                  <button
+                    type="button"
+                    className="button ghost"
+                    aria-label={`${selected.active ? 'Deactivate' : 'Reactivate'} project ${selected.code}`}
+                    onClick={() => void toggleProject(selected)}
+                  >
+                    {selected.active ? 'Deactivate project' : 'Reactivate project'}
+                  </button>
+                  <button type="button" className="button primary" onClick={() => setDialog({ kind: 'new-system' })}>
+                    New system
+                  </button>
+                </div>
               </div>
               <ErrorAlert message={actionError} />
-              <SystemTable systems={systems} onEdit={setEditing} onToggleActive={(system) => void toggleSystem(system)} />
-              <SystemForm editing={editing} onSubmit={submitSystem} onCancelEdit={() => setEditing(null)} />
+              <SystemTable
+                systems={systems}
+                onEdit={(system) => setDialog({ kind: 'edit-system', system })}
+                onToggleActive={(system) => void toggleSystem(system)}
+              />
             </>
           ) : (
             <p className="muted register-empty">Select a project to see its approved systems.</p>
           )}
         </section>
       </div>
+      {dialog.kind === 'new-project' && (
+        <ProjectDialog editing={null} onSubmit={createProject} onClose={closeDialog} />
+      )}
+      {dialog.kind === 'edit-project' && (
+        <ProjectDialog
+          editing={dialog.project}
+          onSubmit={(input) => saveProject(dialog.project, input)}
+          onClose={closeDialog}
+        />
+      )}
+      {dialog.kind === 'new-system' && (
+        <SystemDialog editing={null} onSubmit={(input) => saveSystem(null, input)} onClose={closeDialog} />
+      )}
+      {dialog.kind === 'edit-system' && (
+        <SystemDialog
+          editing={dialog.system}
+          onSubmit={(input) => saveSystem(dialog.system, input)}
+          onClose={closeDialog}
+        />
+      )}
     </>
   );
 }
