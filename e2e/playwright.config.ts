@@ -55,7 +55,9 @@ export default defineConfig({
       env: REGISTER_DATABASE_ENV,
     },
     {
-      command: 'npm --prefix ../apps/inspection-api run dev',
+      // The compiled service, as the container image runs it; not the watch-mode dev script, which would
+      // restart the service under the tests whenever a file changed.
+      command: 'npm --prefix ../apps/inspection-api run build && npm --prefix ../apps/inspection-api start',
       url: `${INSPECTION_API_URL}/health`,
       reuseExistingServer: !isCI,
       timeout: 120_000,
