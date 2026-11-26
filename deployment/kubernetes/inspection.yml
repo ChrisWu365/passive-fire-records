@@ -53,7 +53,7 @@ spec:
         # hostPath volumes ignore fsGroup, and the application image runs as the
         # non-root `node` user (UID 1000). The data directory keeps whatever
         # ownership the host has, so align it before the API starts writing
-        # inspections.json and uploaded photos.
+        # uploaded photos. (Inspection records live in PostgreSQL, not on this volume.)
         - name: fix-data-ownership
           image: inspection-api:replace-me
           imagePullPolicy: IfNotPresent

@@ -1,31 +1,35 @@
 spring:
   config:
-    # Optional local file holding REGISTER_DB_* values; see .env.example. Deployed environments set real
+    # Optional local file holding REGISTER_DATABASE_* values; see .env.example. Deployed environments set real
     # environment variables instead.
     import: "optional:file:.env[.properties]"
   profiles:
     default: local
   datasource:
-    # Without REGISTER_DB_* the service falls back to an in-memory database, so it still starts.
-    url: "${REGISTER_DB_URL:jdbc:h2:mem:registerdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1}"
-    username: "${REGISTER_DB_USERNAME:sa}"
-    password: "${REGISTER_DB_PASSWORD:}"
+    # No defaults here on purpose: outside the local and test profiles the service refuses to start without
+    # being told which database to use.
+    url: "${REGISTER_DATABASE_URL}"
+    username: "${REGISTER_DATABASE_USERNAME}"
+    password: "${REGISTER_DATABASE_PASSWORD}"
     hikari:
       maximum-pool-size: 5
   flyway:
-    default-schema: register
-    schemas: register
+    default-schema: "${register.database.schema}"
+    schemas: "${register.database.schema}"
   jpa:
     hibernate:
       ddl-auto: validate
     properties:
       hibernate:
-        default_schema: register
+        default_schema: "${register.database.schema}"
     open-in-view: false
 
 # The secret the inspection service signs tokens with. There is no default outside the local profile: the
 # service refuses to start without a secret of at least 32 bytes.
 register:
+  database:
+    # The PostgreSQL schema holding the register's tables. The end-to-end run uses a schema of its own.
+    schema: "${REGISTER_DATABASE_SCHEMA:register}"
   security:
     jwt-secret: "${JWT_SECRET:}"
 

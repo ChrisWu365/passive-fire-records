@@ -1,9 +1,11 @@
-# Always the in-memory database, whatever REGISTER_DB_* says: the tests empty the register tables.
+# The tests run against a real PostgreSQL, the same engine as every deployed environment. The "jdbc:tc:" URL
+# makes Testcontainers start a throwaway PostgreSQL container in Docker on the first connection and remove it
+# when the test run ends, so REGISTER_DATABASE_* is never read and no existing database is touched.
 spring:
   datasource:
-    url: "jdbc:h2:mem:registerdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1"
-    username: sa
-    password: ""
+    url: "jdbc:tc:postgresql:17-alpine:///register_test"
+    username: test
+    password: test
 
 # Test-only signing secret; the security tests sign their tokens with the same value.
 register:

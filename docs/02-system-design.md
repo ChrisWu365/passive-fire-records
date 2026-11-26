@@ -1,20 +1,10 @@
 # System design
 
-Status: target design. Nothing here is implemented yet; the
-"Current state" section describes the repository as it is today.
+Status: implemented. This document describes the system as built.
 Related documents: [01-business-logic.md](./01-business-logic.md) (rules and terms)
 and [03-slice-spec.md](./03-slice-spec.md) (build order and acceptance checks).
 
-## Current state
-
-| Part | Today |
-| --- | --- |
-| Java service | Spring Boot 4.1 on Java 21, `Product` CRUD at `/api/products`, H2 in memory, no authentication. Package `com.example.crud.product` |
-| Node service | `apps/inspection-api`, Express 5, inspections in `data/inspections.json`, photos in `data/uploads`, HS256 JWT valid for 8 hours, three in-code demo users |
-| Web | `apps/inspection-web`, React 19 + Vite, Nginx proxies `/api/`, `/health`, `/uploads/` to the Node service. It never calls the Java service |
-| Deployment | Kubernetes namespace `product-crud`; Java on NodePort 30080, web on NodePort 30173 over plain HTTP, Node service internal on 4000 |
-
-## Target architecture
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -52,11 +42,12 @@ about a system.
 ## Register service (Java)
 
 **Stack additions:** PostgreSQL driver, Flyway, Spring Security resource
-server. H2 stays for the `local` and `test` profiles only.
+server. PostgreSQL in every profile: the `local` profile defaults to a PostgreSQL on the developer's
+machine, and the `test` profile starts a throwaway one with Testcontainers.
 
 **Packages:** `com.example.crud.register` replaces `com.example.crud.product`.
 The Maven artifact, image and Kubernetes names stay `product-crud` for now; see
-"Open decisions".
+"Decisions taken, and what is left".
 
 **Tables (schema `register`)**
 
@@ -304,7 +295,8 @@ offline with whatever token it has; it only matters at sync time.
 
 | Variable | Service | Purpose |
 | --- | --- | --- |
-| `REGISTER_DB_URL`, `REGISTER_DB_USERNAME`, `REGISTER_DB_PASSWORD` | Register | Supabase connection, `register` role. Read from real environment variables, or from an optional `.env` file in the working directory (template: `.env.example`). When unset, the service starts on an in-memory database. The `local` and `test` profiles always use the in-memory database |
+| `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME`, `REGISTER_DATABASE_PASSWORD` | Register | Supabase connection, `register` role. Read from real environment variables, or from an optional `.env` file in the working directory (template: `.env.example`). Required when deployed. The `local` profile defaults to the local Supabase stack; the `test` profile starts its own PostgreSQL container and ignores these |
+| `REGISTER_DATABASE_SCHEMA` | Register | Schema for the register tables; defaults to `register` |
 | `JWT_SECRET` | Both | Shared token signing key |
 | `DATABASE_URL` | Inspection | PostgreSQL connection string; required. For hosted Supabase use the session pooler and add `sslmode=require&uselibpqcompat=true` |
 | `DATABASE_SCHEMA` | Inspection | Schema for the inspection tables; defaults to `inspection` |
@@ -331,7 +323,7 @@ database, with the other service stubbed.
 
 | Component | What is covered | Tool |
 | --- | --- | --- |
-| Register service | Every endpoint, error responses, role checks, migrations | MockMvc, H2 in PostgreSQL mode |
+| Register service | Every endpoint, error responses, role checks, migrations | MockMvc, PostgreSQL started by Testcontainers |
 | Inspection service API | Endpoints and roles, with the register call stubbed for success, not found, inactive and timeout; repeated `clientId` | Supertest |
 | Inspection service store | The PostgreSQL store and its migrations | PostgreSQL service container in CI |
 | Web app local store | Download and queue tables in SQLite | Vitest |
@@ -346,8 +338,8 @@ between them, driven through a real browser.
 
 The end-to-end run is the only place the real call between the two services is
 exercised, so it must start the register service as well as the inspection
-service and web app. In CI the register service runs on H2 and the inspection
-service uses the PostgreSQL service container; the AI call uses the built-in
+service and web app. In CI both services use the PostgreSQL service container, each in a schema
+of its own; the AI call uses the built-in
 mock draft.
 
 ## Risks
@@ -359,13 +351,13 @@ mock draft.
   WebKit on Windows, where the app falls back to online-only. Real Safari has
   not been tried.
 - **Offline mode needs HTTPS.** Service workers and the browser's private file
-  system work only on HTTPS or `localhost`. The deployed web app is plain HTTP
-  on `http://<VM_IP>:30173`, so offline mode will not work there until TLS is
-  added (a domain with a certificate, or a tunnel). On `localhost` it works
-  as-is.
-- **H2 is not PostgreSQL.** Java tests on H2 can pass while a migration fails
-  on Supabase. Keep migrations to plain SQL, and run them against Supabase in
-  the `dev` environment before relying on them.
+  system work only on HTTPS or `localhost`. The deployed web app works offline
+  only when it is served through the HTTPS gateway, which needs
+  `PUBLIC_HOSTNAME` to be set. On plain HTTP it works online-only.
+- **The register tests need Docker.** They run against a real PostgreSQL that
+  Testcontainers starts, so migrations and queries are tested on the engine
+  used in deployment. Hosted Supabase itself (pooler, SSL) is still only
+  exercised by a deployment.
 - **Browser storage can be cleared.** The browser may evict site data under
   storage pressure, and the user can clear it; unsynced records would be lost.
   The app should request persistent storage and show the count of unsynced
@@ -375,17 +367,21 @@ mock draft.
   images first.
 - **Free-plan Supabase projects pause after inactivity.** Check the project is
   awake before a demo.
-- **The production check on demo users is commented out** in
-  `apps/inspection-api/src/store.ts`, while the README says demo accounts are
-  disabled in production. Decide which is intended and make the two agree.
+- **The demo accounts exist in every environment.** There is no user database and
+  no way to switch them off. A deployment holding real data would need a real
+  identity provider first.
 
-## Open decisions
+## Decisions taken, and what is left
 
-1. **HTTPS for the deployed demo:** how to provide it (domain and certificate,
-   or a tunnel), or whether to demo offline mode on `localhost` only.
-2. **Renaming** the Java artifact, image, Kubernetes resources and monitoring
-   job from `product-crud` to a register name. It is cosmetic but touches CI,
-   manifests, Grafana and the README.
-3. **Local development database:** a shared Supabase project, or a local
-   PostgreSQL in Docker, for the Node service.
-4. **Photo files in Supabase Storage** in place of the server volume.
+- **HTTPS for the deployed site:** a Caddy proxy in the cluster (`deployment/kubernetes/gateway.yml`)
+  obtains a Let's Encrypt certificate for the hostname in the `PUBLIC_HOSTNAME` variable. It is applied
+  only when that variable is set. Not yet exercised on a real deployment.
+- **The register's database is required when deployed.** Outside the `local` and `test` profiles the
+  service refuses to start without `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME` and `REGISTER_DATABASE_PASSWORD`,
+  and says which are missing.
+- **Local development database:** any local PostgreSQL; the local Supabase stack or a `postgres` container.
+- **Not done: renaming** the Java artifact, image, Kubernetes resources and monitoring job from
+  `product-crud`. It is cosmetic, and touches CI, manifests, Grafana and the README.
+- **Not done: photo files in Supabase Storage.** They stay on the server volume.
+- **Not done: separate database roles.** The design calls for one role per schema; the deployment
+  currently uses whatever role each connection string names.

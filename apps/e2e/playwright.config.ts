@@ -10,13 +10,24 @@ const WEB_URL = 'http://localhost:5173';
 const BUILT_WEB_URL = 'http://localhost:4173';
 const OFFLINE_TESTS = '**/*.offline.spec.ts';
 
-// PostgreSQL for the inspection service. Locally this defaults to the local Supabase stack; CI sets
-// E2E_DATABASE_URL to its service container. The end-to-end run keeps its records in a schema of its own,
-// so it never mixes with development data.
+// PostgreSQL for both services. Locally this defaults to the local Supabase stack; CI sets E2E_DATABASE_URL
+// to its service container. The end-to-end run keeps each service's data in a schema of its own, so it never
+// mixes with development data.
 const DATABASE_URL = process.env.E2E_DATABASE_URL
   ?? process.env.TEST_DATABASE_URL
   ?? 'postgresql://postgres:postgres@127.0.0.1:54322/postgres';
 const E2E_SCHEMA = 'inspection_e2e';
+const REGISTER_E2E_SCHEMA = 'register_e2e';
+
+// The register service is given the same database in the form its JDBC driver expects: a "jdbc:" URL
+// without credentials, and the username and password as settings of their own.
+const database = new URL(DATABASE_URL);
+const REGISTER_DATABASE_ENV = {
+  REGISTER_DATABASE_URL: `jdbc:postgresql://${database.host}${database.pathname}${database.search}`,
+  REGISTER_DATABASE_USERNAME: decodeURIComponent(database.username),
+  REGISTER_DATABASE_PASSWORD: decodeURIComponent(database.password),
+  REGISTER_DATABASE_SCHEMA: REGISTER_E2E_SCHEMA,
+};
 
 export default defineConfig({
   testDir: './tests',
@@ -35,11 +46,13 @@ export default defineConfig({
   // register service through the Vite dev server, and the inspection service calls the register service.
   webServer: [
     {
-      // The register service on its "local" profile: in-memory database with the seeded demo project.
+      // The register service on its "local" profile. Its migrations create the schema and the seeded demo
+      // project on first start.
       command: 'mvn -q -f ../../pom.xml spring-boot:run -Dspring-boot.run.profiles=local',
       url: `${REGISTER_URL}/actuator/health`,
       reuseExistingServer: !isCI,
       timeout: 300_000,
+      env: REGISTER_DATABASE_ENV,
     },
     {
       command: 'npm --prefix ../inspection-api run dev',

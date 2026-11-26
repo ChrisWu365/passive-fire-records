@@ -2,6 +2,8 @@ name: Reusable Spring Boot CI
 
 # Reusable workflow: builds the Maven application and runs unit, integration,
 # and static analysis checks (Checkstyle, PMD, SpotBugs are bound to `verify`).
+# The integration tests start a PostgreSQL container with Testcontainers, using
+# the Docker engine already present on the runner.
 on:
   workflow_call:
 

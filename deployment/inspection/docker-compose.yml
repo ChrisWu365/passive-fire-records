@@ -10,6 +10,9 @@ services:
       AI_PROVIDER_URL: ${AI_PROVIDER_URL:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-}
+    # The register service is expected on the host, on port 8080.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - inspection-data:/app/data
     expose:
@@ -21,6 +24,10 @@ services:
       context: ../../apps/inspection-web
     depends_on:
       - inspection-api
+    # The web container's Nginx sends /api/register/ to "product-crud:8080", the register service's name in
+    # Kubernetes. Here that name points at the host, where the register service runs.
+    extra_hosts:
+      - "product-crud:host-gateway"
     ports:
       - "5173:80"
     restart: unless-stopped

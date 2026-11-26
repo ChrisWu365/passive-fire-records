@@ -8,6 +8,9 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET to the secret the inspection API signs tokens with (at least 32 bytes)}
+      REGISTER_DATABASE_URL: ${REGISTER_DATABASE_URL:?Set REGISTER_DATABASE_URL to the register's PostgreSQL JDBC URL}
+      REGISTER_DATABASE_USERNAME: ${REGISTER_DATABASE_USERNAME:?Set REGISTER_DATABASE_USERNAME}
+      REGISTER_DATABASE_PASSWORD: ${REGISTER_DATABASE_PASSWORD:?Set REGISTER_DATABASE_PASSWORD}
     ports:
       - "8080:8080"
     restart: unless-stopped

@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The end-to-end run starts the register service (Java), the inspection service and the web app, with
-    # nothing stubbed between them. The inspection service keeps its records in this PostgreSQL.
+    # nothing stubbed between them. Both services keep their data in this PostgreSQL, each in its own schema.
     services:
       postgres:
         image: postgres:17-alpine

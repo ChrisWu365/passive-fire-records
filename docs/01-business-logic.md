@@ -1,6 +1,6 @@
 # Business logic: passive fire installation records
 
-Status: agreed target scope. Nothing in this document is implemented yet.
+Status: implemented. This document describes the scope the project was built to.
 Related documents: [03-slice-spec.md](./03-slice-spec.md) (what to build, in order) and
 [02-system-design.md](./02-system-design.md) (how it is built).
 

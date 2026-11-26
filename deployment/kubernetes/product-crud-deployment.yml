@@ -39,6 +39,21 @@ spec:
           env:
             - name: SPRING_PROFILES_ACTIVE
               value: __SPRING_PROFILE__
+            - name: REGISTER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: register-secrets
+                  key: db-url
+            - name: REGISTER_DATABASE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: register-secrets
+                  key: db-username
+            - name: REGISTER_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: register-secrets
+                  key: db-password
             # The same secret the inspection API signs tokens with; the register service verifies them.
             - name: JWT_SECRET
               valueFrom:

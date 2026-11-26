@@ -1,326 +1,271 @@
-# Spring Boot Maven CRUD Example
+# Passive Fire Installation Records
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+An offline-first proof of concept for recording firestopping work on a construction site. An installer
+downloads the job's approved firestop systems, records each sealed opening with photos while there is no
+network, and the records sync by themselves when the connection returns.
 
-This project demonstrates GitHub Actions CI/CD with two applications:
+It is built as two services and a web app:
 
-1. **Spring Boot Product API**: A CRUD application for `Product` records using H2 in-memory database
-2. **Passive Fire Inspection Demo**: A Node.js/TypeScript/React application for fire safety inspections with AI-powered assistance via Google Gemini API
+- **Register service** — Java 21 and Spring Boot. Owns projects and each project's approved firestop systems.
+- **Inspection service** — Node.js and TypeScript. Owns inspection records, photos and AI-assisted drafts.
+- **Web app** — React. Installable, opens with no network, and keeps its offline data in SQLite in the browser.
+
+Both services store their data in PostgreSQL (Supabase in deployment), each in its own schema. One GitHub
+Actions pipeline builds, tests and deploys all three.
+
+> This is a personal proof of concept, not a compliance product. It models a simplified version of real
+> practice (see [Known simplifications](#known-simplifications)), the seeded firestop systems are fictional,
+> and an AI draft is a suggestion for a person to review, never a compliance decision.
 
 ## Contents
 
+- [What it does](#what-it-does)
+- [Architecture](#architecture)
+- [Try the offline flow](#try-the-offline-flow)
+- [Known simplifications](#known-simplifications)
 - [Technology stack](#technology-stack)
-- [System architecture](#system-architecture)
-- [Screenshots](#screenshots)
 - [Local development setup](#local-development-setup)
-- [API](#api)
-- [Passive fire inspection demo](#passive-fire-inspection-demo)
-- [Deployment options](#deployment-options)
-- [Recommended hardware](#recommended-hardware)
+- [Configuration reference](#configuration-reference)
+- [APIs](#apis)
+- [Testing](#testing)
+- [Deployment](#deployment)
 - [GitHub Actions CI/CD](#github-actions-cicd)
 - [Monitoring](#monitoring)
 - [Troubleshooting](#troubleshooting)
+- [Design documents](#design-documents)
 
-## Technology stack
+## What it does
 
-**Spring Boot Product API:**
-- Java 21, Maven, and Spring Boot 4.1
-- Spring Web, Spring Data JPA, and Bean Validation
-- Springdoc OpenAPI / Swagger UI
-- Spring Boot Actuator and Micrometer Prometheus
-- H2, JUnit 6, and MockMvc
+| Who | What they do |
+| --- | --- |
+| Admin (office) | Sets up projects and each project's approved firestop systems: a short code, the wall or floor type, the service passing through, the fire rating, the materials and the method |
+| Installer (site) | Downloads the register to the device, then records each sealed opening: project, location, system code, photos, notes and an instruction for the AI |
+| Viewer | Reads records; changes nothing |
 
-**Passive Fire Inspection Demo:**
-- Node.js 24, TypeScript 5.9, and Express 5.1
-- React 19 with Vite 6.1
-- JWT authentication with bcryptjs 3.0
-- Multer 2.0 for file uploads
-- Swagger UI and swagger-jsdoc for API documentation
-- Google Gemini API for AI-powered inspection assistance
-- Vitest 5, React Testing Library, and jsdom for the React component tests
-- Playwright for end-to-end tests in Chromium, Firefox, and WebKit
+The workflow:
 
-**Infrastructure & DevOps:**
-- Docker and Docker Compose
-- Kubernetes with containerd, kubeadm, kubelet, kubectl, and Flannel
-- Prometheus and Grafana for metrics, dashboards, and alert rules
-- Azure Virtual Machines and Network Security Groups
-- GitHub Actions and GitHub Container Registry (GHCR)
+1. **Office, online.** The admin adds a project's approved systems on the **Register** screen.
+2. **Before going on site, online.** The installer presses **Download for offline**.
+3. **On site, no network.** The installer creates records. Each is saved on the device as **Pending sync**.
+4. **Network returns.** The app sends each record, uploads its photos and asks for the AI draft, with no
+   user action. The record becomes **Synced**.
+5. **Review, online.** The installer reads the AI draft, edits the record and sets its status.
 
-## System architecture
+Rules worth knowing:
 
-The project can run as an all-in-one single-server stack. The application,
-Prometheus, and Grafana are deployed on the same host; Grafana is provisioned
-with Prometheus automatically, and Prometheus scrapes the application's
-`/actuator/prometheus` endpoint.
+- A record must use a system from its project's approved list. The inspection service checks this with the
+  register service, and the record keeps its own copy of the system's details, so later edits to the
+  register never change existing records.
+- Projects and systems are deactivated, never deleted.
+- If the server refuses a record at sync time (for example its system was deactivated meanwhile), the
+  record stays on the device as **Sync failed** with the reason, until the installer retries or discards it.
+- Sending is safe to interrupt: a record interrupted part-way is never created twice, and no photo is
+  uploaded twice.
+- The AI drafts text only. It never sets a record's status.
+
+## Architecture
 
 ```mermaid
 flowchart LR
-    User[User / Browser] --> Web[React inspection web<br/>NodePort :30173]
-    Web --> API[Node.js inspection API<br/>internal :4000]
-    API --> Auth[JWT + RBAC]
-    API --> InspectionData[(Inspection JSON / photos)]
-    API --> AI[Optional Google Gemini<br/>vision AI backend-only]
-    User --> K8s[Kubernetes NodePort<br/>:30080]
-    K8s --> App[Spring Boot product API<br/>container :8080]
-    App --> H2[(H2 database)]
-    App -- Service :8080 / metrics --> Prom[Prometheus<br/>NodePort :30090]
-    Graf[Grafana<br/>NodePort :30030] --> Prom
-    CI[GitHub Actions] --> Registry[GHCR]
-    Registry --> App
-    Registry --> Web
-    Registry --> API
+    subgraph Device[Browser]
+        UI[React app, installable]
+        SW[Service worker: caches the app itself]
+        DB[(SQLite: downloaded register + records waiting to sync)]
+        UI --- DB
+    end
+
+    UI -->|one origin| GW[Nginx gateway]
+    GW -->|/api/register/*| REG[Register service<br/>Java 21, Spring Boot]
+    GW -->|/api/*, /uploads/*| INS[Inspection service<br/>Node.js, Express]
+    INS -->|is this project and system valid?| REG
+    INS -->|photos + instruction| AI[Google Gemini, optional]
+
+    REG --> PG1[(PostgreSQL<br/>schema: register)]
+    INS --> PG2[(PostgreSQL<br/>schema: inspection)]
+    INS --> VOL[(Photo files)]
+
+    CI[GitHub Actions] --> GHCR[GHCR images] --> K8s[Kubernetes on one VM]
 ```
 
-Kubernetes is optional for orchestration. On a single Docker host, the
-monitoring installer below is idempotent: it installs Docker only when needed,
-and reuses existing Prometheus/Grafana containers and persistent volumes.
+| Component | Owns | Notes |
+| --- | --- | --- |
+| Register service | Projects, approved firestop systems, the snapshot the web app downloads | Verifies the sign-in token; reads need any role, writes need admin |
+| Inspection service | Sign-in, inspection records, photos, AI drafts | Calls the register service when a record is created or its system changes |
+| Web app | Screens, the offline copy of the register, the queue of records waiting to sync | Calls both services through one origin; never calls `fetch` outside its API client |
+| Nginx gateway | Routing by path | In development the Vite dev server does the same routing |
 
-The original Spring Boot service continues to own the product API. The
-inspection demo is a separate React + Node.js vertical slice; the two services
-can be deployed independently and share the same CI/CD and monitoring platform.
+How the pieces fit:
 
-The product API listens on container port `8080` and uses NodePort `30080`.
-The inspection web uses NodePort `30173`; its Node.js API remains an internal
-Kubernetes Service on port `4000`. Prometheus uses NodePort `30090`, and Grafana
-uses NodePort `30030`. Prometheus scrapes the application metrics while Grafana
-reads the metrics from Prometheus and provisions the dashboard automatically.
+- **Sign-in.** The inspection service issues an HS256 JWT. The register service verifies the same token
+  with the shared `JWT_SECRET`. Demo accounts are built in; there is no user database.
+- **Service-to-service call.** A plain HTTP request inside the cluster, with the user's token forwarded and
+  a 3 second timeout. "Not found" or "inactive" becomes a 422 with the reason; no answer becomes a 503 and
+  nothing is stored.
+- **Separate data.** Neither service reads the other's tables. The inspection service refers to a project
+  and system by id and keeps a copy of what it needs.
+- **Offline.** The browser reads the live register whenever it can be reached, and the downloaded copy only
+  when it cannot. Records captured offline carry an id chosen by the device; the server keeps at most one
+  record per id, which is what makes re-sending safe.
 
-## Screenshots
+The full design is in [docs/02-system-design.md](docs/02-system-design.md).
 
-The following screenshots show the Azure resources and network configuration
-used by the all-in-one deployment, followed by the application and monitoring
-interfaces.
+## Try the offline flow
 
-### Azure resources
+Offline features need HTTPS or `localhost`, and a service worker, which only the **built** web app has.
+After the [local setup](#local-development-setup), with the register service and the inspection service
+running:
 
-![Azure VM resources](.github/assets/ScreenShot_Azure_VM.png)
+```bash
+cd apps/inspection-web
+npm run build
+npm run preview        # serves the built app on http://localhost:4173
+```
 
-### Azure VM network settings
+Then, in Chrome or Edge at http://localhost:4173:
 
-The Azure Network Security Group allows SSH on port `22`, the product API
-NodePort `30080`, the inspection Web NodePort `30173`, and monitoring NodePorts
-`30030` and `30090`.
+1. Sign in as `admin@example.com`. Open **Register**, select **DEMO**, and add a system, say `SYS-05`.
+2. Sign out and sign in as `inspector@example.com`. Press **Download for offline**.
+3. Switch the network off (DevTools → Network → Offline, or airplane mode) and reload. The app still opens
+   and shows **Offline**.
+4. Press **+ New inspection**. Pick the project and `SYS-05` from the list (they come from the device),
+   type a location, attach a photo, write an AI instruction, and save. The record appears under
+   **On this device** as **Pending sync**.
+5. Switch the network back on. The record turns **Synced**, appears in the list, and opens with its photo
+   and an AI draft labelled as unverified.
 
-![Azure VM network settings](.github/assets/ScreenShot_Azure_VM_Network_Settings.png)
+Without an AI key the draft is a clearly labelled mock text, so the whole flow works with no external
+account.
 
-### Swagger UI
+## Known simplifications
 
-![Swagger UI](.github/assets/ScreenShot_Swagger.png)
+Deliberate cuts, so that the flow stays small and can be run with one photo of anything.
 
-### Grafana dashboard
+| Real practice | In this project |
+| --- | --- |
+| Each opening gets a numbered physical label before it is photographed | No label numbers; a record has a location and a system code |
+| Photos are taken before, during and at completion | Plain photos with no stage |
+| Each opening is marked on a floor plan | Free-text location |
+| Work is assigned by level and area | No work areas or assignment |
+| A supervisor reviews records and sends defects back for rework | No review loop; a status field only |
+| A register is exported at handover | No export |
+| Users come from an identity provider | Three built-in demo accounts |
 
-![Grafana dashboard](.github/assets/ScreenShot_Grafana.png)
+Other limits:
 
-### Prometheus alerts
+- Only **new** records can be captured offline. A record already on the server is edited online.
+- A **Sync failed** record can be retried or discarded, not edited.
+- Offline use works in **one browser tab** at a time. A second tab runs online-only.
+- Offline behaviour is tested by automation in Chromium. The device database also opened in Firefox in a
+  manual check; Safari has not been tried.
 
-![Prometheus alerts](.github/assets/ScreenShot_Prometheus.png)
+The reasoning and the sources behind the business model are in
+[docs/01-business-logic.md](docs/01-business-logic.md).
 
-### Inspection demo user instructions
+## Technology stack
 
-The following screenshots demonstrate the inspection demo workflow:
+**Register service**
 
-#### Login
+- Java 21, Spring Boot 4.1, Spring Web, Spring Data JPA, Bean Validation
+- Spring Security as an OAuth2 resource server (HS256 JWT)
+- Flyway migrations on PostgreSQL in every environment; the tests start their own PostgreSQL with
+  Testcontainers
+- Springdoc OpenAPI, Actuator, Micrometer Prometheus
+- JUnit, Mockito, MockMvc; Checkstyle, PMD and SpotBugs in the build
 
-Sign in with one of the demo accounts:
+**Inspection service**
 
-![Inspection login](.github/assets/inspection/ScreenShot_Inspection_Login.png)
+- Node.js 22, TypeScript, Express 5
+- PostgreSQL through `pg`, with migrations applied on start
+- JWT sign-in, Multer uploads, Swagger UI
+- Google Gemini for AI drafts, optional
+- Node's built-in test runner and Supertest
 
-#### Compliance operations
+**Web app**
 
-View and manage inspection records based on your role permissions:
+- React 19, TypeScript, Vite
+- SQLite compiled to WebAssembly, running in a web worker, stored in the browser's private file system
+- A service worker (Workbox, through `vite-plugin-pwa`) that caches the app's own files
+- Vitest and React Testing Library; Playwright for end-to-end tests
 
-![Compliance operations](.github/assets/inspection/ScreenShot_Inspection_Compliance_Operations.png)
+**Delivery**
 
-#### New inspection
-
-Create a new inspection record with observations and corrective actions:
-
-![New inspection](.github/assets/inspection/ScreenShot_Inspection_New_Inspection.png)
-
-#### Update inspection
-
-Edit existing inspection details:
-
-![Update inspection](.github/assets/inspection/ScreenShot_Inspection_Update_Inspection.png)
-
-#### Print inspection
-
-Generate a printable inspection report:
-
-![Print inspection](.github/assets/inspection/ScreenShot_Inspection_Print_Inspection.png)
+- GitHub Actions, GitHub Container Registry
+- Kubernetes (kubeadm, containerd, Flannel) on one Azure VM; Nginx; Caddy for HTTPS
+- Supabase PostgreSQL
+- Prometheus and Grafana
 
 ## Local development setup
-
-Step-by-step instructions for preparing a development machine on Windows or
-macOS. On Linux, use the distribution package manager for the same versions; the
-macOS shell commands apply unchanged.
 
 ### Prerequisites
 
 | Tool | Version | Needed for |
 | --- | --- | --- |
-| JDK | 21 | Spring Boot product API |
-| Maven | 3.6.3 or newer | Spring Boot build, tests, and quality checks |
-| Node.js | 22 or newer (24 recommended) | Inspection API, React web app, and E2E tests |
-| npm | Bundled with Node.js | Installing JavaScript dependencies |
-| Git | Any recent version | Cloning the repository |
-| Docker Desktop | Optional | `docker compose` local deployment only |
+| JDK | 21 | Register service |
+| Maven | 3.6.3 or newer | Register service build and tests |
+| Node.js | 22.9 or newer | Inspection service, web app, end-to-end tests |
+| PostgreSQL | 15 or newer | Both services, and the inspection service's tests |
+| Docker | Any recent version | The register service's tests, which start a throwaway PostgreSQL; also the easiest way to get a local PostgreSQL |
 
-The repository does not include a Maven wrapper, so Maven must be installed
-separately. No database setup is required: the product API uses an H2 in-memory
-database, and the inspection API keeps its JSON data under
-`apps/inspection-api/data`.
+Both services use PostgreSQL locally, as they do when deployed. There is no in-memory database anywhere.
 
-### Step 1 - Install the toolchain
-
-**Windows (PowerShell, using winget):**
-
-```powershell
-winget install --id EclipseAdoptium.Temurin.21.JDK -e
-winget install --id Apache.Maven -e
-winget install --id OpenJS.NodeJS.LTS -e
-winget install --id Git.Git -e
-winget install --id Docker.DockerDesktop -e   # optional
-```
-
-Close and reopen the terminal afterwards so that `PATH` and `JAVA_HOME` are
-picked up.
-
-**macOS (Homebrew):**
-
-```bash
-# Install Homebrew first if it is missing:
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-brew install openjdk@21 maven node git
-sudo ln -sfn "$(brew --prefix)/opt/openjdk@21/libexec/openjdk.jdk" \
-  /Library/Java/JavaVirtualMachines/openjdk-21.jdk
-echo 'export JAVA_HOME=$(/usr/libexec/java_home -v 21)' >> ~/.zshrc
-source ~/.zshrc
-```
-
-Docker Desktop (`brew install --cask docker`) is only needed for the optional
-Compose workflow.
-
-**Verify the toolchain on either OS:**
-
-```bash
-java -version    # must report 21.x
-mvn -v           # must report Maven 3.6.3+ and Java 21
-node -v          # must report v22 or newer
-npm -v
-git --version
-```
-
-`mvn -v` prints the JDK Maven will compile with. If it reports an older Java
-version, fix `JAVA_HOME` so that both `java -version` and `mvn -v` show 21.
-
-### Step 2 - Clone the repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/ChrisWu365/java-maven-crud-cicd.git
 cd java-maven-crud-cicd
 ```
 
-### Step 3 - Run the Spring Boot product API
+### 2. Start a local PostgreSQL
+
+Either of these works. Each service creates its own schema on first start: `register` and `inspection`.
+
+```bash
+# A plain PostgreSQL in Docker
+docker run -d --name inspection-postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17-alpine
+# connection string: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+
+# or the local Supabase stack
+supabase start
+# connection string: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+```
+
+### 3. Run the register service
 
 ```bash
 mvn spring-boot:run
 ```
 
-The application listens on port `8080`. The default `local` profile starts H2 in
-memory and enables Swagger UI:
+With nothing configured, the default `local` profile connects to the local Supabase stack on port `54322`.
+For a different PostgreSQL, such as the plain Docker one above, copy `.env.example` to `.env` in the
+repository root and set the three `REGISTER_DATABASE_*` values. The first start creates the tables and a
+seeded demo project.
 
-- http://localhost:8080/swagger-ui.html
-- http://localhost:8080/v3/api-docs
-- http://localhost:8080/h2-console (JDBC URL `jdbc:h2:mem:cruddb`, user `sa`)
+It listens on port `8080`. In the `local` profile:
 
-Select another profile explicitly:
+- Swagger UI: http://localhost:8080/swagger-ui.html
+- Health: http://localhost:8080/actuator/health
 
-```bash
-mvn spring-boot:run -Dspring-boot.run.profiles=dev
-mvn spring-boot:run -Dspring-boot.run.profiles=test
-java -jar target/product-crud-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
-```
+The register endpoints need a sign-in token, which the inspection service issues (next step).
 
-| Profile | Purpose | Swagger |
-| --- | --- | --- |
-| `local` | Local development with H2 | Enabled |
-| `dev` | Shared development environment | Enabled |
-| `test` | Automated tests | Enabled |
-| `staging` | Production-like environment | Disabled |
-| `prod` | Production deployment | Disabled |
-
-Verify the API from a second terminal:
-
-```bash
-# macOS
-curl http://localhost:8080/api/products
-curl http://localhost:8080/actuator/health
-
-# Windows PowerShell
-Invoke-RestMethod http://localhost:8080/api/products
-Invoke-RestMethod http://localhost:8080/actuator/health
-```
-
-### Step 4 - Configure and run the inspection API
+### 4. Run the inspection service
 
 ```bash
 cd apps/inspection-api
-npm install     # use "npm ci" for a reproducible install
+npm install
+cp .env.example .env        # Windows PowerShell: Copy-Item .env.example .env
 ```
 
-Create the local environment file from the template so your local values are
-kept next to the app:
-
-```bash
-# macOS
-cp .env.example .env
-
-# Windows PowerShell
-Copy-Item .env.example .env
-```
-
-The API reads its configuration from process environment variables and does not
-load `.env` automatically, so export the same values in the terminal that starts
-the dev server:
-
-```bash
-# macOS
-export JWT_SECRET="$(openssl rand -hex 32)"
-
-# Windows PowerShell
-$env:JWT_SECRET = "change-me-to-a-long-random-secret"
-```
-
-Leaving `JWT_SECRET` unset falls back to a development-only default, which is
-acceptable for local work but must never be used outside your machine. The
-`AI_*` variables are optional; without them the API returns its deterministic
-mock suggestion. `.env` is ignored by `.gitignore`; still never commit a real
-secret.
-
-Start the API:
+Edit `.env` so that `DATABASE_URL` and `TEST_DATABASE_URL` match the PostgreSQL from step 2, then:
 
 ```bash
 npm run dev
 ```
 
-It listens on http://localhost:4000. Verify:
+It listens on port `4000` and loads `.env` by itself. Swagger UI is at http://localhost:4000/api-docs.
+Leave `JWT_SECRET` unset locally: both services then use the same built-in development secret. The `AI_*`
+variables are optional; without them AI drafts are labelled mock text.
 
-```bash
-# macOS
-curl http://localhost:4000/health
-
-# Windows PowerShell
-Invoke-RestMethod http://localhost:4000/health
-```
-
-Swagger UI is available at http://localhost:4000/api-docs.
-
-### Step 5 - Run the React web app
-
-Open a new terminal and keep the inspection API running:
+### 5. Run the web app
 
 ```bash
 cd apps/inspection-web
@@ -328,9 +273,8 @@ npm install
 npm run dev
 ```
 
-The Vite dev server listens on http://localhost:5173 and proxies `/api`,
-`/health`, and `/uploads` to `http://localhost:4000`, so `VITE_API_URL` can stay
-empty for local development. Open the app and sign in with a demo account:
+Open http://localhost:5173. The dev server routes `/api/register` to port `8080` and the rest of `/api`
+to port `4000`.
 
 | Role | Email | Password |
 | --- | --- | --- |
@@ -338,616 +282,302 @@ empty for local development. Open the app and sign in with a demo account:
 | Inspector | `inspector@example.com` | `Inspector123!` |
 | Viewer | `viewer@example.com` | `Viewer123!` |
 
-### Step 6 - Run the automated tests
+These accounts are built into the inspection service in every environment. Do not put real data in a
+deployment that still has them.
 
-| Suite | Command |
-| --- | --- |
-| Spring Boot API | `mvn clean verify` from the repository root |
-| Inspection API | `cd apps/inspection-api && npm test` |
-| Inspection Web | `cd apps/inspection-web && npm test` |
-| E2E | `cd apps/e2e && npm install && npx playwright install && npm test` |
+The dev server has no service worker, so the app cannot reopen offline there. For that, use the built app
+as described in [Try the offline flow](#try-the-offline-flow).
 
-The Playwright config declares a `webServer` block, so the suite starts the
-inspection API and the web app itself and waits for both
-`http://localhost:4000/health` and `http://localhost:5173`; no separate terminal
-is needed. `npx playwright install --with-deps` also installs OS packages and is
-meant for Debian/Ubuntu and CI; on macOS and Windows use plain
-`npx playwright install`.
+### Running the register service against Supabase
 
-### Daily development workflow
-
-After the one-time setup, working on the inspection demo needs three terminals:
+Not needed for development. To run the register against a hosted database:
 
 ```bash
-# Terminal 1 - Spring Boot product API (can be skipped when only
-# working on the inspection demo)
-mvn spring-boot:run
-
-# Terminal 2 - inspection API
-cd apps/inspection-api && npm run dev
-
-# Terminal 3 - React web app
-cd apps/inspection-web && npm run dev
+cp .env.example .env        # in the repository root; fill in the three REGISTER_DATABASE_* values
+mvn spring-boot:run "-Dspring-boot.run.profiles=dev"
 ```
 
-### Notes and common issues
+Use the Supabase **Session pooler** connection details (port 5432).
 
-- **Ports already in use.** The stack expects `8080` (Spring Boot), `4000`
-  (inspection API), and `5173` (Vite). Stop the conflicting process, or set
-  `PORT` for the inspection API and point `VITE_API_URL` at the API when the web
-  app needs a different origin.
-- **PowerShell and `&&`.** Windows PowerShell 5.1 does not accept `&&` as a
-  command separator. Run one command per line, or use PowerShell 7.
-- **Reset local demo data.** The inspection API seeds
-  `apps/inspection-api/data/inspections.json` on first start. Delete that file
-  (and `apps/inspection-api/data/uploads/`) to return to the seeded state, or
-  point `DATA_DIR` and `UPLOAD_DIR` at other directories.
-- **Windows firewall prompt.** Allow Node.js through the firewall so the dev
-  servers and the E2E tests can reach the local ports.
-- **Slow first Maven build.** The first `mvn verify` downloads the Spring Boot
-  dependency tree together with Checkstyle, SpotBugs, and PMD.
+## Configuration reference
 
-## API
-
-| Method | Path | Description |
+| Variable | Service | Purpose |
 | --- | --- | --- |
-| GET | `/api/products` | List all products |
-| GET | `/api/products/{id}` | Find one product |
-| POST | `/api/products` | Create a product |
-| PUT | `/api/products/{id}` | Update a product |
-| DELETE | `/api/products/{id}` | Delete a product |
+| `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME`, `REGISTER_DATABASE_PASSWORD` | Register | PostgreSQL JDBC connection. Required when deployed; the service refuses to start without them. The `local` profile defaults to the local Supabase stack, and the tests start their own PostgreSQL |
+| `REGISTER_DATABASE_SCHEMA` | Register | Schema for the register tables; defaults to `register` |
+| `JWT_SECRET` | Both | Shared token signing secret, at least 32 bytes. Required outside local development |
+| `DATABASE_URL` | Inspection | PostgreSQL connection string. Required. For hosted Supabase use the session pooler with `sslmode=require&uselibpqcompat=true` |
+| `DATABASE_SCHEMA` | Inspection | Schema for the inspection tables; defaults to `inspection` |
+| `TEST_DATABASE_URL` | Inspection tests | A PostgreSQL the tests may create and drop throwaway schemas in |
+| `REGISTER_SERVICE_URL` | Inspection | Address of the register service; defaults to `http://localhost:8080` |
+| `REGISTER_TIMEOUT_MS` | Inspection | Timeout for each call to the register; defaults to `3000` |
+| `AI_PROVIDER_URL`, `AI_API_KEY`, `AI_MODEL` | Inspection | Google Gemini settings, optional. Set the URL and key together |
+| `UPLOAD_DIR` | Inspection | Where photo files are written; defaults to `data/uploads` |
+| `WEB_ORIGIN` | Inspection | Comma-separated origins allowed by CORS; any origin when unset |
+| `LOG_LEVEL` | Inspection | `debug`, `info`, `warn` or `error`; defaults to `info` |
+| `VITE_API_URL` | Web (build time) | Origin of the API; empty for the page's own origin, which is the normal case |
 
-Example request body for create and update operations:
+Secrets never go in the web app or in Git. `.env` files are ignored by Git; `.env.example` files are templates.
 
-```json
-{
-  "name": "Keyboard",
-  "price": 99.90,
-  "description": "Mechanical keyboard"
-}
-```
+## APIs
 
-Validation rules: `name` is required and limited to 100 characters, `price`
-must be greater than zero, and `description` is limited to 500 characters.
+**Register service** — all under `/api/register`, all need a token.
 
-## Passive fire inspection demo
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| GET | `/projects` | any | List projects |
+| POST | `/projects` | admin | Create a project |
+| GET, PUT | `/projects/{id}` | any, admin | Read, update or deactivate a project |
+| GET | `/projects/{id}/systems` | any | List a project's systems |
+| POST | `/projects/{id}/systems` | admin | Add a system |
+| GET, PUT | `/projects/{id}/systems/{systemId}` | any, admin | Read, update or deactivate a system |
+| GET | `/snapshot` | any | Active projects with their active systems, for offline download |
 
-The repository also includes a TypeScript/React vertical
-slice designed for AI practices under `apps/inspection-api` and `apps/inspection-web`. The existing
-Spring Boot product API remains unchanged; the inspection demo is a separate
-Node.js service and React application.
+There is no DELETE. Errors are `{ "error": "..." }`; validation errors add a `fields` object.
 
-The demo supports:
+**Inspection service**
 
-- JWT login with `ADMIN`, `INSPECTOR`, and `VIEWER` roles enforced by the API
-- Inspection records with building/location, notes, status, observations, and remedial actions
-- JPEG/PNG/WebP photo uploads with a 10 MB per-file and five-file limit
-- A printable inspection detail view
-- Google Gemini API integration for AI-assisted inspection drafts with a clearly labelled human-review requirement
-- A deterministic mock AI suggestion when no provider key is configured
+| Method | Path | Role | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/auth/login` | — | Sign in; returns a token |
+| GET | `/api/inspections` | any | List records, most recently updated first |
+| POST | `/api/inspections` | admin, inspector | Create a record. With a `clientId`, repeating the request returns the stored record |
+| GET, PUT | `/api/inspections/{id}` | any; admin, inspector | Read or update a record |
+| DELETE | `/api/inspections/{id}` | admin | Delete a record |
+| POST | `/api/inspections/{id}/photos` | admin, inspector | Upload photos (JPEG, PNG, WebP; 10 MB each) |
+| DELETE | `/api/inspections/{id}/photos/{index}` | admin, inspector | Remove a photo |
+| POST | `/api/inspections/{id}/ai-summary` | admin, inspector | Request an AI draft |
 
-Installation, local run commands, and the demo accounts are documented in
-[Local development setup](#local-development-setup). The API also serves
-Swagger UI and the OpenAPI document at http://localhost:4000/api-docs and
-http://localhost:4000/api-docs.json.
-
-The demo accounts are disabled when `NODE_ENV=production`; replace them with a
-real identity provider before production use. Set `JWT_SECRET` to a long random
-secret. AI integration is optional and uses Google Gemini API only: configure
-`AI_PROVIDER_URL`, `AI_API_KEY`, and `AI_MODEL` only on the backend; never put
-the key in React or commit it.
-
-Run both services with Docker Compose:
-
-```bash
-set JWT_SECRET=<long-random-secret>
-docker compose -f deployment/inspection/docker-compose.yml up --build -d
-```
-
-Docker Compose is provided only as an optional local development shortcut.
-It is not the server deployment path: dev, test, staging and production
-use the existing Kubernetes deployment and containerd runtime.
+Interactive documentation: `/swagger-ui.html` on the register service (local, dev and test profiles) and
+`/api-docs` on the inspection service.
 
 ## Testing
 
-Commands for running each suite are listed in
-[Local development setup](#local-development-setup); this section describes what
-each suite covers. The project follows a testing pyramid with unit tests (70%),
-integration tests (20%), and E2E tests (10%).
+| Suite | Command | Needs |
+| --- | --- | --- |
+| Register service | `mvn clean verify` in the repository root | Docker running; the tests start and remove their own PostgreSQL container |
+| Inspection service | `npm test` in `apps/inspection-api` | `TEST_DATABASE_URL` in `.env` |
+| Web app | `npm test` in `apps/inspection-web` | Nothing |
+| End-to-end | `npm install && npx playwright install && npm test` in `apps/e2e` | A local PostgreSQL; JDK and Maven |
 
-### API Testing (Node.js/Express)
+What each level covers:
 
-**Unit & Integration Tests:**
-- Framework: Node.js built-in test runner + Supertest
-- Location: `apps/inspection-api/test/`
+- **Unit** — one piece of logic with test doubles around it: the register's rules, the inspection
+  service's rules, the sync engine, the React screens. The web app's SQLite stores are tested against the
+  same SQLite WebAssembly build the browser runs, with an in-memory database.
+- **Integration** — one service with its real HTTP layer and database: every register endpoint with role
+  checks and migrations, against a real PostgreSQL started by Testcontainers; the inspection API; the
+  PostgreSQL store against a real PostgreSQL.
+- **End-to-end** — the web app and both services together in a real browser, with nothing stubbed between
+  them. Playwright starts the register service, the inspection service, the dev server and the built app
+  by itself. An `offline` project runs the offline tests against the built app in Chromium, switching the
+  network off mid-test.
 
-Tests cover:
-- Authentication and JWT token generation
-- Inspection CRUD operations
-- Observation management
-- Role-based access control
+`mvn verify` also runs Checkstyle, PMD and SpotBugs, and fails the build on any finding.
 
-### Frontend Testing (React)
+The end-to-end run keeps its data in schemas of its own, `register_e2e` and `inspection_e2e`, so it never
+mixes with development data. It uses the PostgreSQL in `E2E_DATABASE_URL`, or `TEST_DATABASE_URL`, or the
+local Supabase default.
 
-**Component Tests:**
-- Framework: Vitest + React Testing Library
-- Location: `apps/inspection-web/src/test/`
-- Run with UI: `npm run test:ui`
-- Run with coverage: `npm run test:coverage`
+Every acceptance criterion in [docs/03-slice-spec.md](docs/03-slice-spec.md) has a label such as `AC-6.2`,
+and the tests that prove it carry that label in their names. Tests were written and approved before the
+code; see [AGENTS.md](AGENTS.md) for the rule.
 
-Tests cover:
-- Login form and authentication flow
-- Role-based UI rendering
-- Component interactions
-- User actions and state changes
+## Deployment
 
-### E2E Testing
+The pipeline deploys three images to a single-node Kubernetes cluster on a VM: the register service
+(`product-crud`, the repository's original name), the inspection service and the web app.
 
-**End-to-End Tests:**
-- Framework: Playwright
-- Location: `apps/e2e/tests/`
-- Run with UI: `npx playwright test --ui`
+### What you must configure
 
-`playwright.config.ts` starts the inspection API and the web app through its
-`webServer` block, reusing servers that are already running locally and starting
-them fresh in CI.
+In each GitHub Environment you deploy to (`development`, `staging`, `production`):
 
-Tests cover:
-- Complete login flow
-- Dashboard navigation
-- Role-based permissions
-- Inspection creation and management
-- Cross-browser compatibility (Chromium, Firefox, WebKit)
+| Name | Kind | Purpose |
+| --- | --- | --- |
+| `K8S_VM_IP`, `K8S_VM_USER`, `K8S_VM_KEY` | Secret | SSH access to the VM |
+| `K8S_GHCR_USERNAME`, `K8S_GHCR_TOKEN` | Secret | Image pull from GHCR; the token needs `read:packages` |
+| `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME`, `REGISTER_DATABASE_PASSWORD` | Secret | The register's PostgreSQL, as a JDBC URL such as `jdbc:postgresql://<host>:5432/postgres?sslmode=require` |
+| `INSPECTION_DATABASE_URL` | Secret | The inspection service's PostgreSQL connection string |
+| `INSPECTION_JWT_SECRET` | Secret | Shared token signing secret, at least 32 bytes |
+| `INSPECTION_AI_API_KEY`, `INSPECTION_AI_PROVIDER_URL`, `INSPECTION_AI_MODEL` | Secret | Optional Gemini settings |
+| `GRAFANA_ADMIN_PASSWORD` | Secret | Grafana administrator password |
+| `PUBLIC_HOSTNAME` | Variable | Optional. The hostname to serve over HTTPS; see below |
 
-### CI/CD Integration
+The deploy script stops with a message naming the setting if a required one is missing. Both services can
+use the same Supabase project: the register uses the `register` schema and the inspection service the
+`inspection` schema, and each creates its own.
 
-The workflows under `.github/workflows/` automatically run:
-- Unit and integration tests on every push and pull request
-- Component tests on pull requests
-- E2E tests before an image is published
-- Uploads Surefire, Vitest coverage, and Playwright reports as artifacts
+### HTTPS
 
-Test coverage targets:
-- Unit tests: 80%+
-- Critical business logic: 100%
-- E2E: Happy path and key error scenarios
+Installing the app and using it offline need HTTPS. Without it everything else still works.
 
-## Deployment options
+Set the `PUBLIC_HOSTNAME` environment variable and the deployment adds a Caddy proxy that listens on ports
+80 and 443, obtains a Let's Encrypt certificate for that hostname and renews it by itself. Before deploying:
 
-| Option | Entry point | Runtime | Best for |
-| --- | --- | --- | --- |
-| Manual JAR | `scripts/manual/` | Java + systemd | Learning host-process deployment |
-| Docker | `deployment/docker/`, `scripts/docker/` | Docker Compose | Single-VM container deployment |
-| Kubernetes | `deployment/kubernetes/`, `scripts/kubernetes/` | Product API + inspection API/Web + monitoring | Unified container orchestration and rolling updates |
-| Monitoring | `deployment/monitoring/`, `scripts/monitoring/` | Prometheus + Grafana | Single-host observability |
+1. Give the VM a hostname that resolves to its public IP. On Azure, set a **DNS name label** on the public
+   IP address to get `<label>.<region>.cloudapp.azure.com` at no cost; or point your own domain at it.
+2. Open TCP ports `80` and `443` in the Network Security Group and any host firewall.
+3. Set `PUBLIC_HOSTNAME` to that hostname, with no scheme, port or path.
 
-GitHub Actions builds the Docker image and publishes it to GHCR. Docker and
-Kubernetes deployments use the immutable `sha-<commit>` tag; deployment hosts
-do not build a different application artifact.
+The app is then at `https://<PUBLIC_HOSTNAME>`. Certificates are kept on the VM under
+`/var/lib/product-crud/caddy-data`, so restarts do not request new ones.
 
-### 1. Manual JAR deployment
+Without `PUBLIC_HOSTNAME` the gateway is skipped and the web app is at `http://<K8S_VM_IP>:30173`.
 
-```bash
-mvn clean package -DskipTests
-scp target/product-crud-0.0.1-SNAPSHOT.jar <user>@<vm>:/home/<user>/app/
-scp scripts/manual/deploy.sh scripts/manual/product-crud.service <user>@<vm>:/home/<user>/app/
-ssh <user>@<vm> 'bash /home/<user>/app/deploy.sh /home/<user>/app'
-```
+### Ports
 
-Check the service:
+| Port | What |
+| --- | --- |
+| `80`, `443` | Web app over HTTPS, when `PUBLIC_HOSTNAME` is set |
+| `30173` | Web app over plain HTTP |
+| `30080` | Register service directly (health and API) |
+| `30090`, `30030` | Prometheus and Grafana; restrict these to trusted networks |
 
-```bash
-sudo systemctl status product-crud
-sudo journalctl -u product-crud -f
-```
+The inspection service is not exposed; it is reached only through the web app's Nginx.
 
-### 2. Docker Compose deployment
+### The cluster
 
-Run locally:
-
-```bash
-docker compose -f deployment/docker/docker-compose.yml up --build -d
-docker compose -f deployment/docker/docker-compose.yml logs -f product-crud
-docker compose -f deployment/docker/docker-compose.yml down
-```
-
-On a new Ubuntu Docker host, run once:
-
-```bash
-sudo bash scripts/docker/install-docker-ubuntu.sh
-```
-
-The script is safe to rerun: installed apt packages are skipped and the Docker
-repository and service are reused. Log out and back in after being added to the
-`docker` group.
-
-The remote deployment script is:
-
-```text
-scripts/docker/deploy-docker.sh <app-directory> <image-reference>
-```
-
-It logs in to GHCR, pulls the immutable image, recreates the Compose service,
-and waits for `/actuator/health`.
-
-### 3. Kubernetes deployment
-
-Kubernetes nodes use **containerd**; Docker is not required and should not be
-installed on the Kubernetes server. Installing Docker can replace or reconfigure
-the containerd package used by Kubernetes. Use Docker Compose only on a separate
-local development machine. Verify the Kubernetes runtime:
-
-```bash
-systemctl status containerd kubelet
-```
-
-#### Single-node control plane and worker
-
-On the Ubuntu user that will later be used by the CI SSH connection, copy this
-repository to the server and run:
+Kubernetes nodes use **containerd**; do not install Docker on the Kubernetes server. On a new Ubuntu VM
+the deploy script installs kubeadm, kubelet, kubectl and Flannel and initialises a single-node cluster by
+itself, provided the SSH user has passwordless `sudo`. To do it by hand:
 
 ```bash
 sudo bash scripts/kubernetes/install-kubernetes-ubuntu.sh --init-control-plane
 kubectl get nodes
-kubectl get pods -A
 ```
 
-The script installs containerd, kubeadm, kubelet, kubectl, and Flannel; creates
-the cluster; and removes the control-plane `NoSchedule` taint so the same node
-can run application workloads. It is idempotent: installed dependencies are
-skipped and an existing `/etc/kubernetes/admin.conf` prevents a second
-`kubeadm init`. During CI deployment, an unreachable cluster automatically
-triggers this single-node initialization flow on a new server.
+Photo files are kept on the VM under `/var/lib/product-crud/inspection-data`. Inspection records are in
+PostgreSQL, not on the VM.
 
-To install packages without initializing a cluster:
+To deploy by hand, export the same settings as environment variables and run:
 
 ```bash
-sudo bash scripts/kubernetes/install-kubernetes-ubuntu.sh
+bash scripts/kubernetes/deploy-kubernetes.sh /home/<user>/app \
+  ghcr.io/<owner>/<repo>:sha-<commit> prod \
+  ghcr.io/<owner>/<repo>-inspection-api:sha-<commit> \
+  ghcr.io/<owner>/<repo>-inspection-web:sha-<commit>
 ```
 
-For a multi-node cluster, initialize the control plane, save the printed
-`kubeadm join ...` command, and run it on each worker. Do not remove worker
-taints in a multi-node production setup.
+### Docker Compose
 
-Important prerequisites:
+- `deployment/docker/docker-compose.yml` runs the register service alone on a Docker host. It needs
+  `JWT_SECRET` and the three `REGISTER_DATABASE_*` variables.
+- `deployment/inspection/docker-compose.yml` is a local shortcut that builds and runs the inspection
+  service and the web app. It needs `JWT_SECRET` and `DATABASE_URL`, and expects the register service on
+  the host at port 8080.
 
-- Ubuntu with apt and systemd; run the script with `sudo`.
-- The CI SSH user must have passwordless `sudo`; existing multi-node clusters
-  must also provide a working `kubectl cluster-info` context.
-- The default Pod CIDR is `10.244.0.0/16`; set `POD_NETWORK_CIDR` if it conflicts.
-- The default Kubernetes package stream is `v1.30`; set `K8S_MINOR_VERSION` to change it.
-- The script disables swap and configures bridge filtering, IPv4 forwarding, and systemd cgroups.
-- Allow SSH and TCP `30080`, `30173` in the cloud security group and host firewall.
+### Recommended hardware
 
-Verify the node:
-
-```bash
-kubectl config current-context
-kubectl cluster-info
-kubectl get nodes -o wide
-kubectl get pods -A
-systemctl status containerd kubelet --no-pager
-```
-
-#### Manually deploy the Kubernetes application
-
-The deployment script creates the namespace, GHCR pull secret, Deployment, and
-Service:
-
-```bash
-export GHCR_USERNAME=<github-username>
-export GHCR_TOKEN=<read-packages-pat>
-bash scripts/kubernetes/deploy-kubernetes.sh \
-  /home/<user>/app ghcr.io/<owner>/<repo>:sha-<commit>
-```
-
-During CI deployment, if `kubectl` is missing, or if it cannot reach a cluster,
-the deployment script automatically runs
-`install-kubernetes-ubuntu.sh --init-control-plane` with passwordless `sudo`.
-On a new server this creates a single-node cluster, installs Flannel, copies
-`admin.conf` to the SSH user's kubeconfig, and removes the control-plane taint.
-An existing `/etc/kubernetes/admin.conf` prevents a second initialization.
-For an existing multi-node cluster, configure and verify the SSH user's
-`~/.kube/config` before deployment instead of relying on automatic
-single-node initialization.
-
-The Kubernetes deployment passes the Spring profile selected from the branch:
-`dev` uses `dev`, `staging` uses `staging`, and `main` uses `prod`.
-
-`GHCR_TOKEN` requires at least `read:packages`. Do not use the short-lived
-`GITHUB_TOKEN` as a long-lived Kubernetes image-pull secret.
-
-#### Deploy the inspection demo in the same Kubernetes cluster
-
-The GitHub Actions Kubernetes job builds and pushes three immutable GHCR images:
-the existing Spring Boot product API, the inspection API, and the inspection Web.
-It then applies `deployment/kubernetes/inspection.yml` in the same
-`product-crud` namespace. The inspection API is internal-only; the React/Nginx
-service proxies `/api`, `/health`, and `/uploads` to it.
-
-Configure these additional environment secrets:
-
-| Secret | Purpose |
-| --- | --- |
-| `INSPECTION_JWT_SECRET` | Long random JWT signing secret |
-| `INSPECTION_AI_API_KEY` | Optional backend-only Google Gemini API key |
-| `INSPECTION_AI_PROVIDER_URL` | Optional Google Gemini API endpoint |
-| `INSPECTION_AI_MODEL` | Optional Google Gemini model name |
-
-`INSPECTION_JWT_SECRET` is required. The three AI secrets may be empty; the
-application then uses its review-labelled mock suggestion. The deployment
-creates a persistent volume claim for inspection JSON data and uploaded photos.
-In the single-node kubeadm setup, the claim is explicitly bound to a local
-hostPath volume at `/var/lib/product-crud/inspection-data`, so no default
-StorageClass or extra storage provisioner is required. This is appropriate for
-the all-in-one demo; use a managed StorageClass or replicated database for a
-multi-node production cluster.
-
-The inspection Web is available at:
-
-```text
-http://<K8S_VM_IP>:30173
-```
-
-Allow TCP `30173` in the Azure Network Security Group and host firewall. The
-inspection API must not be exposed as a public NodePort.
-
-#### Access the Kubernetes service
-
-The Service uses NodePort `30080`. Replace `<K8S_VM_IP>` with the node's public
-or private IP:
-
-```bash
-curl http://<K8S_VM_IP>:30080/actuator/health
-curl http://<K8S_VM_IP>:30080/api/products
-```
-
-If external access fails, check the cloud security group and host firewall:
-
-```bash
-sudo ufw allow 30080/tcp
-kubectl -n product-crud get service product-crud
-kubectl get nodes -o wide
-```
-
-### 4. Prometheus and Grafana monitoring
-
-For Kubernetes, monitoring is deployed as Kubernetes resources by
-`scripts/kubernetes/deploy-kubernetes.sh`; Docker is not installed on the
-Kubernetes node. The workflow passes `GRAFANA_ADMIN_PASSWORD` from the GitHub
-Environment Secret, creates/updates the Kubernetes Secret, and applies
-`deployment/kubernetes/monitoring.yml`. Prometheus scrapes the internal
-`product-crud:8080` Service, so it does not depend on the external NodePort.
-
-Open Prometheus at `http://<K8S_VM_IP>:30090` and Grafana at
-`http://<K8S_VM_IP>:30030`. The application remains available at
-`http://<K8S_VM_IP>:30080`. Existing Deployments, Services, ConfigMaps, and
-the Grafana Secret are reconciled on every deployment. This learning setup uses
-`emptyDir` for monitoring data; deleting the Pods loses metrics history and
-Grafana data. Monitoring uses the `Recreate` strategy because this is a
-single-node learning cluster; a monitoring Pod is stopped before its replacement
-starts. Restrict ports `30030` and `30090` to trusted networks.
-
-The deployment automatically provisions a **Product CRUD / Spring Boot**
-dashboard with request rate, HTTP 5xx ratio, p95 latency, JVM heap, CPU, and
-thread panels. Prometheus also loads alert rules for an unavailable target,
-high HTTP 5xx rate, and high JVM heap usage. These rules are visible under
-**Prometheus -> Alerts**; this learning project does not include Alertmanager
-or an external notification channel yet.
-
-For a Docker Compose host, deploy monitoring independently after the application
-is running:
-
-```bash
-export GRAFANA_ADMIN_PASSWORD=<strong-password>
-export PROMETHEUS_TARGET=host.docker.internal:8080
-sudo -E bash scripts/monitoring/deploy-monitoring.sh /home/<user>/app
-```
-
-Docker monitoring is available at `http://<DOCKER_VM_IP>:9090` and
-`http://<DOCKER_VM_IP>:3000`. The script is idempotent and uses named volumes
-for Prometheus and Grafana data.
-
-## Recommended hardware
-
-The following sizing is for a learning or small internal all-in-one
-deployment. It assumes one application instance, H2, 15 days of Prometheus
-retention, and light dashboard traffic.
-
-| Usage | CPU | Memory | Storage | Network |
-| --- | --- | --- | --- | --- |
-| Minimum / demo | 2 vCPU | 4 GB RAM | 30 GB SSD | 5 Mbps |
-| Recommended / small team | 4 vCPU | 8 GB RAM | 80 GB SSD | 10 Mbps |
-| Higher traffic | 8 vCPU | 16 GB RAM | 150+ GB SSD | 50 Mbps |
-
-Use SSD storage and leave at least 20% free space for container layers,
-Prometheus data, and logs. For production workloads, use an external database
-instead of H2, separate monitoring from the application host, and size
-Prometheus storage from the actual samples-per-second and retention period.
+| Usage | CPU | Memory | Storage |
+| --- | --- | --- | --- |
+| Minimum | 2 vCPU | 4 GB | 30 GB SSD |
+| Comfortable | 4 vCPU | 8 GB | 80 GB SSD |
 
 ## GitHub Actions CI/CD
 
-The pipeline is split by lifecycle instead of living in one file. Build and test
-logic is defined once as a reusable workflow and called by the trigger
-workflows, so no step is copied between files.
-
-### Workflow layout
+Build and test logic is defined once as reusable workflows and called by the trigger workflows.
 
 | File | Trigger | Responsibility |
 | --- | --- | --- |
-| `pr-validation.yml` | `pull_request` to `staging` or `main` | Fast gate: Maven verify, unit tests, E2E. Never publishes or deploys, so fork pull requests reach no secret. |
-| `ci-main.yml` | `push` to `dev`, `staging`, `main`; manual dispatch | Runs CI, publishes the three images, then deploys that exact tag. |
-| `cd-deploy.yml` | Tag `v*.*.*`; manual dispatch | Deploys an image that already exists in GHCR. Never rebuilds. |
-| `scheduled-tasks.yml` | Nightly cron (02:00 Asia/Shanghai); manual dispatch | `npm audit` per app and a Trivy scan of the published images. |
-| `_ci-spring.yml` | Called by the workflows above | `mvn verify` (tests plus Checkstyle, PMD, and SpotBugs) and Surefire reports. |
-| `_ci-inspection.yml` | Called by the workflows above | TypeScript build, unit tests, Playwright E2E, coverage and report artifacts. |
-| `_build-images.yml` | Called by `ci-main.yml` | Buildx build and GHCR push under an immutable `sha-<commit>` tag. |
-| `_deploy.yml` | Called by `ci-main.yml` and `cd-deploy.yml` | Kubernetes or Docker deployment over SSH behind an environment gate. |
+| `pr-validation.yml` | Pull request to `staging` or `main` | Tests only. Never publishes or deploys |
+| `ci-main.yml` | Push to `dev`, `staging`, `main`; manual | Tests, publishes the three images, then deploys that exact tag |
+| `cd-deploy.yml` | Tag `v*.*.*`; manual | Deploys an image that already exists. Never rebuilds |
+| `scheduled-tasks.yml` | Nightly; manual | `npm audit` per app and a Trivy scan of the published images |
+| `_ci-spring.yml` | Called | `mvn verify`: tests, Checkstyle, PMD, SpotBugs |
+| `_ci-inspection.yml` | Called | TypeScript builds, unit tests with a PostgreSQL container, Playwright end-to-end tests |
+| `_build-images.yml` | Called | Buildx build and GHCR push under an immutable `sha-<commit>` tag |
+| `_deploy.yml` | Called | Kubernetes or Docker deployment over SSH, behind an environment gate |
 
-### Branch, environment, and deployment mapping
-
-| Event | Branch | GitHub Environment | Behavior |
+| Event | Branch | GitHub Environment | Behaviour |
 | --- | --- | --- | --- |
 | Pull request | targets `staging`, `main` | none | Validate only |
 | Push | `dev` | `development` | Validate, publish, deploy |
 | Push | `staging` | `staging` | Validate, publish, deploy |
-| Push | `main` | `production` | Validate, publish, then wait for environment approval before deploying |
-| Tag `v*.*.*` | — | `production` | Deploy the existing `sha-<commit>` image of the tagged commit |
+| Push | `main` | `production` | Validate, publish, wait for approval, deploy |
+| Tag `v*.*.*` | — | `production` | Deploy the existing image of the tagged commit |
 
-Pull requests never deploy. Recommended for production: configure `production`
-with required reviewers in **Settings -> Environments -> production**; the
-deployment job then pauses until an authorized reviewer approves it. Use
-environment-level secrets with the same names listed below so each environment
-can use its own host and GHCR credentials. Manual runs can still choose
-Kubernetes or Docker.
+Guarantees:
 
-Changing workflow or job names also changes the check names, so update the
-required status checks in branch protection after switching to this layout.
-
-### Secrets
-
-Configure these in each GitHub Environment, using the same names so the workflow
-can select the values for the target branch:
-
-| Secret | Purpose |
-| --- | --- |
-| `K8S_VM_IP`, `K8S_VM_USER`, `K8S_VM_KEY` | Kubernetes SSH deployment |
-| `K8S_GHCR_USERNAME`, `K8S_GHCR_TOKEN` | Kubernetes GHCR image pull |
-| `DOCKER_VM_IP`, `DOCKER_VM_USER`, `DOCKER_VM_KEY` | Docker Compose SSH deployment |
-| `GHCR_PULL_USERNAME`, `GHCR_PULL_TOKEN` | Optional GHCR pull credentials for the Docker host; falls back to `github.actor` and `GITHUB_TOKEN` |
-| `GRAFANA_ADMIN_PASSWORD` | Grafana administrator password for the monitoring deployment |
-| `INSPECTION_JWT_SECRET` | Inspection API JWT signing secret |
-| `INSPECTION_AI_API_KEY`, `INSPECTION_AI_PROVIDER_URL`, `INSPECTION_AI_MODEL` | Optional backend-only Google Gemini API configuration |
-
-The build job pushes with the automatically provided `GITHUB_TOKEN`. Hosts pull
-with a PAT that needs `read:packages`; `GITHUB_TOKEN` expires when the job ends,
-so a PAT is the durable choice for both Kubernetes and Docker hosts. If the
-organization uses SSO, authorize the PAT for SSO as well.
-
-Environment secrets are resolved by the reusable deploy job, which declares
-`environment: ${{ inputs.environment_name }}` and receives the caller's secrets
-through `secrets: inherit`. If you ever inline the deploy job into
-`ci-main.yml` instead, declare the same `environment` on that job.
-
-### Pipeline guarantees
-
-- Actions are pinned to commit SHAs. `dependabot.yml` bumps them weekly together
-  with the Maven, npm, and Docker dependencies.
-- Every workflow declares `permissions: contents: read` and escalates only
-  `packages: write` for the image build and `packages: read` for deployments.
-- Concurrency cancels superseded pull request runs, while branch and deployment
-  runs are never cancelled mid-flight; deployments additionally serialize per
-  environment.
-- Maven and npm dependencies are cached, and each image keeps its own GHA build
-  cache scope.
-- Images are built once per commit and deployed by tag, so the artifact that
-  passed CI is the artifact that ships. Only `main` moves the `latest` tag.
-- Every job has a timeout, and test reports, coverage, and Playwright results are
-  uploaded as artifacts.
-- The nightly `scheduled-tasks.yml` run surfaces dependency and image
-  vulnerabilities without blocking merges; failed runs are visible in the
-  Actions tab.
+- Actions are pinned to commit SHAs; Dependabot bumps them with the Maven, npm and Docker dependencies.
+- Every workflow starts from `contents: read` and adds only what a job needs.
+- Images are built once per commit and deployed by tag, so what passed the tests is what ships.
+- Pull requests from forks reach no secret.
 
 ## Monitoring
 
-The GitHub Actions Kubernetes deployment automatically applies
-`deployment/kubernetes/monitoring.yml` after the application deployment.
-Store `GRAFANA_ADMIN_PASSWORD` as a secret in each GitHub Environment
-(`development`, `staging`, and `production`); no manual password command on
-the server is required. The application exposes `/actuator/prometheus`.
-Prometheus uses the Kubernetes Service DNS name `product-crud:8080`, not the
-external NodePort. For reference, the scrape configuration is:
+The Kubernetes deployment includes Prometheus (NodePort `30090`) and Grafana (NodePort `30030`), with a
+provisioned dashboard for the register service: request rate, error ratio, p95 latency, JVM heap, CPU and
+threads. Prometheus scrapes `product-crud:8080/actuator/prometheus` inside the cluster and has alert rules
+for an unavailable target, a high 5xx rate and high heap usage. There is no Alertmanager.
 
-```yaml
-scrape_configs:
-  - job_name: product-crud
-    metrics_path: /actuator/prometheus
-    static_configs:
-      - targets: ["product-crud:8080"]
-```
-
-Confirm that the target is `UP` under **Prometheus -> Status -> Targets**, then
-open the provisioned dashboard under the **Product CRUD** folder. Useful
-PromQL examples include:
-
-```promql
-sum(rate(http_server_requests_seconds_count{job="product-crud"}[5m]))
-histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{job="product-crud"}[5m])))
-sum(jvm_memory_used_bytes{job="product-crud",area="heap"})
-up{job="product-crud"}
-```
-
-In production, restrict the metrics endpoint to the monitoring host.
+The health and metrics endpoints of the register service are open without a token; restrict port `30080`
+to trusted networks in a real deployment. The inspection service logs one JSON object per line.
 
 ## Troubleshooting
 
-### kubectl cannot connect to the cluster
+**The register service stops with "Missing database settings".**
+Outside the `local` and `test` profiles it needs `REGISTER_DATABASE_URL`, `REGISTER_DATABASE_USERNAME` and
+`REGISTER_DATABASE_PASSWORD`. Locally, run without a profile, or fill in `.env`.
+
+**The register service stops locally with "Connection to 127.0.0.1:54322 refused".**
+The `local` profile expects the local Supabase stack. Start it with `supabase start`, or point
+`REGISTER_DATABASE_*` in `.env` at another PostgreSQL.
+
+**`mvn verify` fails with "Could not find a valid Docker environment".**
+The register tests start a PostgreSQL container. Start Docker and run the build again.
+
+**The register service stops with "JWT_SECRET is not set" or "too short".**
+It must be at least 32 bytes, and the same value the inspection service uses.
+
+**The inspection service stops with "DATABASE_URL is not set".**
+Create `apps/inspection-api/.env` from `.env.example` and point it at a running PostgreSQL.
+
+**`npm test` in `apps/inspection-api` fails with "TEST_DATABASE_URL is not set".**
+The store tests need a real PostgreSQL. They create and drop their own schema and touch nothing else.
+
+**Signing in works, but the Register screen says "Invalid or expired token".**
+The two services are using different `JWT_SECRET` values.
+
+**Creating a record answers 503 "The register service is unavailable".**
+The inspection service cannot reach the register service. Check `REGISTER_SERVICE_URL` and that the
+register service is running.
+
+**There is no "Download for offline" button.**
+The browser could not open the device database. The usual cause is a second tab of the app: offline use
+works in one tab at a time. Some browsers do not support it; the browser console says why.
+
+**The app does not reopen with the network off.**
+You are on the dev server, or on plain HTTP. Use the built app on `localhost`, or HTTPS.
+
+**The HTTPS gateway does not get a certificate.**
+The hostname must resolve to the VM and ports 80 and 443 must be reachable from the internet. Check with
+`kubectl -n product-crud logs deployment/web-gateway`.
+
+**A hosted Supabase project stops answering.**
+Free projects pause after a period of inactivity; resume the project in the Supabase dashboard.
+
+**`ImagePullBackOff`.**
+Check that the `ghcr-credentials` secret exists in the namespace, that the token has `read:packages`, and
+that the image tag exists.
+
+**A pod does not become ready.**
 
 ```bash
-kubectl config current-context
-kubectl cluster-info
-kubectl get nodes
-```
-
-Make sure these commands run as the SSH user whose `~/.kube/config` is used by
-the CI deployment, not as a different user or root.
-
-### ImagePullBackOff
-
-```bash
-kubectl -n product-crud get secret ghcr-credentials
+kubectl -n product-crud get pods
 kubectl -n product-crud describe pod -l app=product-crud
-kubectl -n product-crud get deployment product-crud \
-  -o=jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+kubectl -n product-crud logs -l app=product-crud --tail=200
+kubectl -n product-crud logs -l app=inspection-api --tail=200
 ```
 
-Confirm that the Secret exists in the same namespace, the PAT has
-`read:packages`, and the image tag exists in GHCR.
+**Photo uploads fail with `EACCES` on the VM.**
+The inspection pod's init container aligns the ownership of the photo directory on every start. To repair
+a running pod, run `sudo chown -R 1000:1000 /var/lib/product-crud/inspection-data` on the node.
 
-### Pending
+## Design documents
 
-Check node scheduling, available resources, and control-plane taints:
-
-```bash
-kubectl get nodes -o wide
-kubectl get nodes -o custom-columns=NAME:.metadata.name,TAINTS:.spec.taints
-kubectl -n product-crud describe pod -l app=product-crud
-```
-
-### CrashLoopBackOff or readiness failures
-
-```bash
-kubectl -n product-crud logs -l app=product-crud --all-containers=true --tail=200
-kubectl -n product-crud describe pod -l app=product-crud
-```
-
-### EACCES: permission denied, open '/app/data/inspections.json'
-
-The application images run as a non-root user (UID 1000), but the inspection data
-volume keeps the ownership of the host directory. Writes to the inspection store
-and photo uploads then fail while `/health` still reports ready, so the UI shows
-`Internal Server Error`.
-
-The `inspection-api` Deployment has a `fix-data-ownership` init container that
-chowns the volume on every start. To repair an already running pod without a new
-rollout, run this on the node (not inside the pod, whose process cannot chown):
-
-```bash
-sudo chown -R 1000:1000 /var/lib/product-crud/inspection-data
-```
-
-For the Docker Compose variant the same ownership rule applies to the
-`inspection-data` volume; recreate an old volume created by a root-running
-container with `docker compose -f deployment/inspection/docker-compose.yml down -v`.
-
-### progress deadline exceeded
-
-This is a summary error meaning that no Pod became Ready before the Deployment
-timeout. Inspect Pod events, container logs, and node status instead of only
-increasing the timeout:
-
-```bash
-kubectl -n product-crud describe deployment product-crud
-kubectl -n product-crud describe pod -l app=product-crud
-kubectl get nodes
-```
+1. [docs/01-business-logic.md](docs/01-business-logic.md) — who uses it, the workflow, the rules, and the
+   evidence behind the model.
+2. [docs/02-system-design.md](docs/02-system-design.md) — architecture, data model, APIs, the offline
+   design, risks.
+3. [docs/03-slice-spec.md](docs/03-slice-spec.md) — the build broken into slices, each with labelled
+   acceptance criteria.

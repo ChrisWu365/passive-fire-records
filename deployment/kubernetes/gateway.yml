@@ -1,0 +1,120 @@
+# HTTPS entry point for the web app.
+#
+# Caddy listens on the node's ports 80 and 443, obtains and renews a Let's Encrypt certificate for the
+# public hostname by itself, and passes every request to the inspection-web Service, which already routes
+# /api/register/ to the register service and the rest of /api/ to the inspection service.
+#
+# HTTPS is what makes the app installable and usable offline: browsers allow service workers and the
+# private file system only on HTTPS or localhost.
+#
+# This manifest is applied only when a public hostname is configured; see scripts/kubernetes/deploy-kubernetes.sh.
+# The hostname must already resolve to this node, and ports 80 and 443 must be reachable from the internet,
+# or the certificate cannot be issued.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-gateway
+  namespace: product-crud
+data:
+  Caddyfile: |
+    {$PUBLIC_HOSTNAME} {
+      encode gzip
+      reverse_proxy inspection-web:80
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-gateway
+  namespace: product-crud
+spec:
+  replicas: 1
+  # The pod binds the node's ports 80 and 443, so the old pod must stop before a new one can start.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: web-gateway
+  template:
+    metadata:
+      labels:
+        app: web-gateway
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+        # Lets the non-root Caddy process bind ports 80 and 443 without any added capability.
+        sysctls:
+          - name: net.ipv4.ip_unprivileged_port_start
+            value: "0"
+      initContainers:
+        # hostPath volumes keep the host directory's ownership, and Caddy runs as a non-root user.
+        - name: fix-data-ownership
+          image: caddy:2-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c", "chown -R 1000:1000 /data"]
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: certificates
+              mountPath: /data
+      containers:
+        - name: caddy
+          image: caddy:2-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: PUBLIC_HOSTNAME
+              value: __PUBLIC_HOSTNAME__
+          ports:
+            - name: http
+              containerPort: 80
+              hostPort: 80
+            - name: https
+              containerPort: 443
+              hostPort: 443
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          volumeMounts:
+            - name: caddyfile
+              mountPath: /etc/caddy
+              readOnly: true
+            # Certificates and the ACME account. Kept on the node so that a restart does not request a new
+            # certificate, which Let's Encrypt limits per hostname.
+            - name: certificates
+              mountPath: /data
+            - name: runtime-config
+              mountPath: /config
+      volumes:
+        - name: caddyfile
+          configMap:
+            name: web-gateway
+        - name: certificates
+          hostPath:
+            path: /var/lib/product-crud/caddy-data
+            type: DirectoryOrCreate
+        - name: runtime-config
+          emptyDir: {}

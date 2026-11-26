@@ -1,12 +1,11 @@
-# Always the in-memory database, whatever REGISTER_DB_* says.
+# Local development runs on PostgreSQL, like every other environment. With nothing set, the service connects
+# to the local Supabase stack ("supabase start"), which is also the inspection service's local default. Set
+# REGISTER_DATABASE_* in .env to use a different local PostgreSQL.
 spring:
   datasource:
-    url: "jdbc:h2:mem:registerdb;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1"
-    username: sa
-    password: ""
-  h2:
-    console:
-      enabled: true
+    url: "${REGISTER_DATABASE_URL:jdbc:postgresql://127.0.0.1:54322/postgres}"
+    username: "${REGISTER_DATABASE_USERNAME:postgres}"
+    password: "${REGISTER_DATABASE_PASSWORD:postgres}"
 
 # Local development only. The inspection service falls back to the same value when JWT_SECRET is unset, so
 # sign-in works across both services without any setup.

@@ -35,6 +35,14 @@ if [ -z "${JWT_SECRET:-}" ]; then
 fi
 export JWT_SECRET
 
+for required in REGISTER_DATABASE_URL REGISTER_DATABASE_USERNAME REGISTER_DATABASE_PASSWORD; do
+  if [ -z "$(printenv "${required}" || true)" ]; then
+    echo "${required} must be provided: the register service stores its data in PostgreSQL." >&2
+    exit 1
+  fi
+done
+export REGISTER_DATABASE_URL REGISTER_DATABASE_USERNAME REGISTER_DATABASE_PASSWORD
+
 printf '%s' "${GHCR_TOKEN}" | docker login ghcr.io \
   --username "${GHCR_USERNAME}" \
   --password-stdin

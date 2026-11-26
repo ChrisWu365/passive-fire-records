@@ -81,6 +81,19 @@ kubectl -n "${NAMESPACE}" create secret docker-registry ghcr-credentials \
   --docker-password="${GHCR_TOKEN}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# The register service keeps projects and firestop systems in PostgreSQL and refuses to start without it.
+for required in REGISTER_DATABASE_URL REGISTER_DATABASE_USERNAME REGISTER_DATABASE_PASSWORD; do
+  if [ -z "$(printenv "${required}" || true)" ]; then
+    echo "${required} must be provided: the register service stores its data in PostgreSQL." >&2
+    exit 1
+  fi
+done
+kubectl -n "${NAMESPACE}" create secret generic register-secrets \
+  --from-literal=db-url="${REGISTER_DATABASE_URL}" \
+  --from-literal=db-username="${REGISTER_DATABASE_USERNAME}" \
+  --from-literal=db-password="${REGISTER_DATABASE_PASSWORD}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # The register service and the inspection API both read the token signing secret from this Secret, so it
 # must exist before either Deployment is applied.
 if [ -z "${JWT_SECRET:-}" ]; then
@@ -115,6 +128,26 @@ fi
 sed "s|inspection-api:replace-me|${INSPECTION_API_IMAGE}|g; s|inspection-web:replace-me|${INSPECTION_WEB_IMAGE}|g; s|namespace: product-crud|namespace: ${NAMESPACE}|g" \
   "${MANIFEST_DIR}/inspection.yml" | kubectl apply -n "${NAMESPACE}" -f -
 kubectl -n "${NAMESPACE}" rollout restart deployment inspection-api
+
+# HTTPS entry point. Optional: without a public hostname the web app stays reachable over plain HTTP on its
+# NodePort, where everything works except installing the app and using it offline.
+if [ -n "${PUBLIC_HOSTNAME:-}" ]; then
+  if [ ! -f "${MANIFEST_DIR}/gateway.yml" ]; then
+    echo "Gateway manifest not found: ${MANIFEST_DIR}/gateway.yml" >&2
+    exit 1
+  fi
+  case "${PUBLIC_HOSTNAME}" in
+    *[!A-Za-z0-9.-]*)
+      echo "PUBLIC_HOSTNAME must be a plain hostname such as app.example.com, without a scheme, port or path." >&2
+      exit 1
+      ;;
+  esac
+  sed "s|__PUBLIC_HOSTNAME__|${PUBLIC_HOSTNAME}|g; s|namespace: product-crud|namespace: ${NAMESPACE}|g" \
+    "${MANIFEST_DIR}/gateway.yml" | kubectl apply -n "${NAMESPACE}" -f -
+  echo "HTTPS gateway applied for https://${PUBLIC_HOSTNAME}"
+else
+  echo "PUBLIC_HOSTNAME is not set; skipping the HTTPS gateway."
+fi
 
 if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ]; then
   echo "GRAFANA_ADMIN_PASSWORD must be provided for Kubernetes monitoring." >&2
