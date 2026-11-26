@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from '../../api/types';
 import { ErrorAlert, messageOf } from '../../components/feedback';
+import { placeOf } from '../../inspections/place';
 import { useOnline } from '../use-online';
 import { useQueue, type QueueServices } from './queue-context';
 import type { QueuedInspection } from './queued-inspection';
@@ -149,7 +150,7 @@ function Panel({ queue, user, onSignInAgain, onSynced, reloadSignal }: DeviceQue
             <li key={item.clientId} aria-label={`${item.location}, ${label}`}>
               <div className="device-queue-main">
                 <strong>{item.projectName}</strong>
-                <span className="subline">{item.location}</span>
+                <span className="subline">{placeOf(item)}</span>
               </div>
               <span className={`badge sync-${item.state.toLowerCase()}`}>{label}</span>
               <span className="muted">{counted(item.photoCount, 'photo')}</span>

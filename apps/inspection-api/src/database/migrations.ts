@@ -66,5 +66,14 @@ export const MIGRATIONS: readonly Migration[] = [
           foreign key (inspection_id) references {{schema}}.inspection (id) on delete cascade
       );
     `
+  },
+  {
+    name: '002_add_inspection_area',
+    // Nullable, with no default: records stored before areas existed simply have none.
+    sql: `
+      alter table {{schema}}.inspection
+        add column area_id uuid,
+        add column area_name text;
+    `
   }
 ];

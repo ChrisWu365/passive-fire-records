@@ -80,6 +80,7 @@ export function createSyncEngine({ queue, inspections }: SyncEngineDependencies)
     const input: InspectionInput = {
       projectId: item.projectId,
       systemId: item.systemId,
+      ...(item.areaId ? { areaId: item.areaId } : {}),
       location: item.location,
       notes: item.notes,
       status: item.status,

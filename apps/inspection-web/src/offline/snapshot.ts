@@ -9,6 +9,12 @@ export interface SnapshotSystem {
   installationMethod: string;
 }
 
+/** An area as it appears in the register's snapshot. Snapshots hold active areas only. */
+export interface SnapshotArea {
+  id: string;
+  name: string;
+}
+
 /** A project as it appears in the register's snapshot. Snapshots hold active projects only. */
 export interface SnapshotProject {
   id: string;
@@ -16,6 +22,7 @@ export interface SnapshotProject {
   name: string;
   address: string | null;
   systems: SnapshotSystem[];
+  areas: SnapshotArea[];
 }
 
 /** What the register returns from GET /api/register/snapshot. */

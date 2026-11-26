@@ -17,6 +17,8 @@ const SCHEMA: readonly string[] = [
      project_name text not null,
      system_id text not null,
      system_json text not null,
+     area_id text,
+     area_name text,
      location text not null,
      notes text not null,
      status text not null,
@@ -44,7 +46,13 @@ const SCHEMA: readonly string[] = [
 const RECORD_COLUMNS =
   'client_id, project_id, project_name, system_id, system_json, location, notes, status, observations_json, '
   + 'ai_instruction, captured_at, created_by_id, created_by_name, state, server_id, photo_count, ai_outcome, '
-  + 'last_error';
+  + 'last_error, area_id, area_name';
+
+/** Columns added after the table first shipped. A device that already has the table gets them added. */
+const ADDED_COLUMNS: ReadonlyArray<{ name: string; definition: string }> = [
+  { name: 'area_id', definition: 'text' },
+  { name: 'area_name', definition: 'text' }
+];
 
 /**
  * Keeps the device's records and their photos in SQLite. The tables are created on first use.
@@ -68,12 +76,12 @@ export class SqliteQueueStore implements QueueStore {
     };
     const statements: SqlStatement[] = [{
       sql: `insert into queued_inspection (${RECORD_COLUMNS})
-            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       params: [
         queued.clientId, queued.projectId, queued.projectName, queued.systemId, JSON.stringify(queued.system),
         queued.location, queued.notes, queued.status, JSON.stringify(queued.observations), queued.aiInstruction,
         queued.capturedAt, queued.createdBy.id, queued.createdBy.name, queued.state, queued.serverId,
-        queued.photoCount, queued.aiOutcome, queued.lastError
+        queued.photoCount, queued.aiOutcome, queued.lastError, queued.areaId, queued.areaName
       ]
     }];
     photos.forEach((photo, position) => {
@@ -169,6 +177,17 @@ export class SqliteQueueStore implements QueueStore {
     return synced.length;
   }
 
+  /** Brings a table created by an earlier version of the app up to the current columns. */
+  private async addMissingColumns(): Promise<void> {
+    const existing = await this.database.query(`select name from pragma_table_info('queued_inspection')`);
+    const present = new Set(existing.map((row) => String(row.name)));
+    const missing = ADDED_COLUMNS.filter((column) => !present.has(column.name));
+    if (missing.length === 0) return;
+    await this.database.transaction(missing.map((column) => ({
+      sql: `alter table queued_inspection add column ${column.name} ${column.definition}`
+    })));
+  }
+
   /** Applies a change to one record, failing loudly when the device does not hold that record. */
   private async change(clientId: string, statements: SqlStatement[]): Promise<void> {
     await this.ready();
@@ -177,10 +196,14 @@ export class SqliteQueueStore implements QueueStore {
     await this.database.transaction(statements);
   }
 
-  /** Creates the tables once per store. A failed attempt is forgotten, so the next call tries again. */
+  /**
+   * Creates the tables, and adds any column they lack, once per store. A failed attempt is forgotten,
+   * so the next call tries again.
+   */
   private ready(): Promise<void> {
     this.schemaReady ??= this.database
       .transaction(SCHEMA.map((sql) => ({ sql })))
+      .then(() => this.addMissingColumns())
       .catch((error: unknown) => {
         this.schemaReady = undefined;
         throw error;
@@ -189,12 +212,18 @@ export class SqliteQueueStore implements QueueStore {
   }
 }
 
+function textOrNull(value: SqlRow[string]): string | null {
+  return value === null ? null : String(value);
+}
+
 function toQueuedInspection(row: SqlRow): QueuedInspection {
   return {
     projectId: String(row.project_id),
     projectName: String(row.project_name),
     systemId: String(row.system_id),
     system: JSON.parse(String(row.system_json)) as SystemSnapshot,
+    areaId: textOrNull(row.area_id),
+    areaName: textOrNull(row.area_name),
     location: String(row.location),
     notes: String(row.notes),
     status: String(row.status) as Status,
@@ -204,10 +233,10 @@ function toQueuedInspection(row: SqlRow): QueuedInspection {
     createdBy: { id: String(row.created_by_id), name: String(row.created_by_name) },
     clientId: String(row.client_id),
     state: String(row.state) as QueueState,
-    serverId: row.server_id === null ? null : String(row.server_id),
+    serverId: textOrNull(row.server_id),
     photoCount: Number(row.photo_count),
     aiOutcome: String(row.ai_outcome) as AiOutcome,
-    lastError: row.last_error === null ? null : String(row.last_error)
+    lastError: textOrNull(row.last_error)
   };
 }
 

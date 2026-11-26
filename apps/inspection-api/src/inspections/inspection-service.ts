@@ -29,6 +29,14 @@ interface RegisterReference {
   system: SystemSnapshot;
 }
 
+/** The area a record is in, with the name copied from the register; both null when it has none. */
+interface AreaReference {
+  areaId: string | null;
+  areaName: string | null;
+}
+
+const NO_AREA: AreaReference = { areaId: null, areaName: null };
+
 /**
  * The rules for inspection records. It knows nothing about HTTP: callers hand it validated input and it
  * answers with records or throws the domain errors in errors.ts.
@@ -52,7 +60,7 @@ export class InspectionService {
   }
 
   /**
-   * Stores a new record after the register confirms its project and system. A repeat of an upload that
+   * Stores a new record after the register confirms its project, system and area. A repeat of an upload that
    * was already stored (same clientId) is answered with the stored record, without asking the register,
    * so a device can safely retry after a dropped connection even while the register is down.
    */
@@ -61,12 +69,16 @@ export class InspectionService {
       const alreadyStored = await this.store.findByClientId(input.clientId);
       if (alreadyStored) return { inspection: alreadyStored, created: false };
     }
-    const reference = await this.resolveReference(input.projectId, input.systemId, bearerToken);
+    const [reference, area] = await Promise.all([
+      this.resolveReference(input.projectId, input.systemId, bearerToken),
+      this.resolveArea(input.projectId, input.areaId, bearerToken)
+    ]);
     const result = await this.store.create({
       clientId: input.clientId,
       projectId: input.projectId,
       systemId: input.systemId,
       ...reference,
+      ...area,
       location: input.location,
       notes: input.notes,
       status: input.status,
@@ -84,20 +96,28 @@ export class InspectionService {
   }
 
   /**
-   * Replaces the editable fields. The register is asked only when the project or system changes; otherwise
-   * the record keeps the copy it already has, so it stays editable while the register is down.
+   * Replaces the editable fields. The register is asked only about what changes: the project or system,
+   * and the area. Otherwise the record keeps the copies it already has, so it stays editable while the
+   * register is down.
    */
   async update(id: string, input: InspectionInput, bearerToken: string): Promise<Inspection> {
     const existing = await this.get(id);
     const sameReference = existing.projectId === input.projectId && existing.systemId === input.systemId;
-    const reference: RegisterReference = sameReference
-      ? { projectName: existing.projectName, system: existing.system }
-      : await this.resolveReference(input.projectId, input.systemId, bearerToken);
+    const sameArea = existing.projectId === input.projectId && existing.areaId === input.areaId;
+    const [reference, area] = await Promise.all([
+      sameReference
+        ? { projectName: existing.projectName, system: existing.system }
+        : this.resolveReference(input.projectId, input.systemId, bearerToken),
+      sameArea
+        ? { areaId: existing.areaId, areaName: existing.areaName }
+        : this.resolveArea(input.projectId, input.areaId, bearerToken)
+    ]);
     return this.save({
       ...existing,
       projectId: input.projectId,
       systemId: input.systemId,
       ...reference,
+      ...area,
       location: input.location,
       notes: input.notes,
       status: input.status,
@@ -155,6 +175,19 @@ export class InspectionService {
     const saved = await this.store.update(inspection);
     if (!saved) throw new InspectionNotFoundError();
     return saved;
+  }
+
+  /**
+   * @returns the area with the register's name for it, or no area when none was asked for
+   * @throws RegisterRejectionError when the project has no such area, or the area is inactive
+   * @throws RegisterUnavailableError when the register cannot answer
+   */
+  private async resolveArea(projectId: string, areaId: string | null, bearerToken: string): Promise<AreaReference> {
+    if (areaId === null) return NO_AREA;
+    const area = await this.registerClient.findArea(projectId, areaId, bearerToken);
+    if (!area) throw new RegisterRejectionError(REGISTER_REJECTIONS.AREA_NOT_FOUND);
+    if (!area.active) throw new RegisterRejectionError(REGISTER_REJECTIONS.AREA_INACTIVE);
+    return { areaId: area.id, areaName: area.name };
   }
 
   /**

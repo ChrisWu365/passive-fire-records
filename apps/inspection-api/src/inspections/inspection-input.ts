@@ -12,6 +12,8 @@ import {
 export interface InspectionInput {
   projectId: string;
   systemId: string;
+  /** The chosen area of the project, or null for none. */
+  areaId: string | null;
   location: string;
   notes: string;
   status: InspectionStatus;
@@ -51,6 +53,7 @@ export function parseInspectionInput(body: unknown): InspectionInput {
   return {
     projectId: requiredUuid(fields, 'projectId'),
     systemId: requiredUuid(fields, 'systemId'),
+    areaId: optionalUuid(fields, 'areaId'),
     location: location(fields),
     notes: notes(fields),
     status: status(fields),
@@ -63,6 +66,14 @@ export function parseInspectionInput(body: unknown): InspectionInput {
 function requiredUuid(fields: Body, name: string): string {
   const value = fields[name];
   if (!isUuid(value)) throw new ValidationError(`${name} is required and must be a UUID`);
+  return value.toLowerCase();
+}
+
+/** @returns the value in lower case, or null when the field is absent or null */
+function optionalUuid(fields: Body, name: string): string | null {
+  const value = fields[name];
+  if (value === undefined || value === null) return null;
+  if (!isUuid(value)) throw new ValidationError(`${name} must be a UUID`);
   return value.toLowerCase();
 }
 

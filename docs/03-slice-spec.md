@@ -1,8 +1,8 @@
 # Slice spec
 
 Status: Slices 1 to 6 are built and their criteria have passing tests. Slice 7 is in place; its two
-criteria are manual checks on a deployed environment. Slice 8 is specified and its tests are written;
-it is not implemented until those tests are approved.
+criteria are manual checks on a deployed environment. Slices 8 and 9 are built and their
+criteria have passing tests.
 Related documents: [01-business-logic.md](./01-business-logic.md) (rules and terms)
 and [02-system-design.md](./02-system-design.md) (architecture, data model, APIs).
 
@@ -348,6 +348,52 @@ rejection, resume); Playwright test for the full demo script above.
 
 **Tests:** React component tests for the register dialogs, the project list and the inspections
 list. The existing tests of slice 4 that filled the in-page forms gain the step that opens the dialog.
+
+## Slice 9: Project areas
+
+A record's location is split in two. The building's levels and areas are project data that the office
+sets up once; the installer picks one and types only the detail that is particular to the opening.
+
+**In scope**
+
+- Register service: each project has a list of areas. An area has a name, unique within its project,
+  and an active flag; like projects and systems, areas are deactivated, never deleted.
+- Register service: the offline snapshot carries each active project's active areas.
+- Inspection service: a record may name one area of its project. The service checks the area with the
+  register service when the record is created or its area changes, and the record keeps its own copy
+  of the area's name. The existing location text stays required and becomes the detail.
+- Web app: the register screen manages a project's areas; the record dialog has a "Level / area"
+  picker fed by the register, or by the downloaded copy when offline; the list and the record show the
+  area with the detail.
+- Records that already exist have no area and stay valid.
+
+**Acceptance**
+
+- **AC-9.1** An admin adds, renames, deactivates and reactivates a project's areas. A name already
+  used in the same project is refused with 409; the same name in another project is accepted. Any
+  signed-in user can read the areas; only an admin can change them.
+- **AC-9.2** The snapshot includes, for each active project, its active areas and no inactive ones.
+- **AC-9.3** A record created with an active area of its own project stores the area's id and a copy
+  of its name. Renaming the area in the register afterwards does not change the record.
+- **AC-9.4** A record naming an area that does not exist, is inactive, or belongs to another project
+  is refused with 422 and the reason, and nothing is stored. If the register cannot be reached the
+  answer is 503 and nothing is stored.
+- **AC-9.5** A record with no area is accepted, on create and on update, and a record created before
+  this slice still reads and updates.
+- **AC-9.6** In the record dialog, choosing a project fills the "Level / area" picker with that
+  project's active areas; changing the project clears the chosen area. A stored record whose area has
+  since been deactivated still shows its own area.
+- **AC-9.7** After one download, with the network off, the picker is filled from the device, and a
+  record captured offline with an area reaches the server with that area when the network returns.
+- **AC-9.8** A record whose area was deactivated while it waited on the device ends in "Sync failed"
+  with the reason and stays on the device.
+- **AC-9.9** The inspections list and the printed record show the area before the detail, and the
+  list's search matches the area's name.
+
+**Tests:** Java unit and MockMvc tests for the area endpoints and the snapshot; Node tests for the
+record rules and the store, with the register stubbed; React component tests for the register screen
+and the picker; store tests for the device database, including a device that already holds a copy
+downloaded before this slice; one Playwright test for AC-9.7.
 
 ## Out of scope for all slices
 

@@ -1,4 +1,4 @@
-import type { RegisterClient, RegisterProject, RegisterSystem } from './register-client.js';
+import type { RegisterArea, RegisterClient, RegisterProject, RegisterSystem } from './register-client.js';
 import { RegisterUnavailableError } from './register-client.js';
 
 export interface HttpRegisterClientOptions {
@@ -33,6 +33,12 @@ export class HttpRegisterClient implements RegisterClient {
     const path = `/api/register/projects/${encodeURIComponent(projectId)}/systems/${encodeURIComponent(systemId)}`;
     const body = await this.get(path, bearerToken);
     return body === undefined ? undefined : toSystem(body);
+  }
+
+  async findArea(projectId: string, areaId: string, bearerToken: string): Promise<RegisterArea | undefined> {
+    const path = `/api/register/projects/${encodeURIComponent(projectId)}/areas/${encodeURIComponent(areaId)}`;
+    const body = await this.get(path, bearerToken);
+    return body === undefined ? undefined : toArea(body);
   }
 
   /** @returns the JSON body of a 200, or undefined for a 404 */
@@ -92,6 +98,15 @@ function toSystem(body: JsonObject): RegisterSystem {
     fireRating: requireString(body, 'fireRating'),
     materials: requireString(body, 'materials'),
     installationMethod: requireString(body, 'installationMethod'),
+    active: requireBoolean(body, 'active')
+  };
+}
+
+function toArea(body: JsonObject): RegisterArea {
+  return {
+    id: requireString(body, 'id'),
+    projectId: requireString(body, 'projectId'),
+    name: requireString(body, 'name'),
     active: requireBoolean(body, 'active')
   };
 }

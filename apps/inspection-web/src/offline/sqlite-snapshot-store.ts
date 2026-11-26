@@ -1,4 +1,4 @@
-import type { FirestopSystem, Project } from '../api/types';
+import type { Area, FirestopSystem, Project } from '../api/types';
 import type { RegisterSnapshot, SnapshotInfo } from './snapshot';
 import type { SnapshotStore } from './snapshot-store';
 import type { SqlDatabase, SqlStatement } from './sql-database';
@@ -24,6 +24,12 @@ const SCHEMA: readonly string[] = [
      installation_method text not null
    )`,
   'create index if not exists ix_snapshot_system_project on snapshot_system (project_id)',
+  `create table if not exists snapshot_area (
+     id text primary key,
+     project_id text not null,
+     name text not null
+   )`,
+  'create index if not exists ix_snapshot_area_project on snapshot_area (project_id)',
   `create table if not exists snapshot_meta (
      id integer primary key check (id = ${META_ROW_ID}),
      generated_at text not null,
@@ -32,8 +38,9 @@ const SCHEMA: readonly string[] = [
 ];
 
 /**
- * Keeps the register snapshot in SQLite tables. The tables are created on first use, so the same code
- * serves a fresh device and one that already holds a download.
+ * Keeps the register snapshot in SQLite tables. The tables are created on first use, each only if it is
+ * missing, so the same code serves a fresh device, one that already holds a download, and one whose
+ * download was made before a table existed.
  */
 export class SqliteSnapshotStore implements SnapshotStore {
   private schemaReady: Promise<void> | undefined;
@@ -44,6 +51,7 @@ export class SqliteSnapshotStore implements SnapshotStore {
     await this.ready();
     const statements: SqlStatement[] = [
       { sql: 'delete from snapshot_system' },
+      { sql: 'delete from snapshot_area' },
       { sql: 'delete from snapshot_project' },
       { sql: 'delete from snapshot_meta' }
     ];
@@ -64,6 +72,7 @@ export class SqliteSnapshotStore implements SnapshotStore {
         });
       }
     }
+    statements.push(...areaInserts(snapshot));
     statements.push({
       sql: 'insert into snapshot_meta (id, generated_at, downloaded_at) values (?, ?, ?)',
       params: [META_ROW_ID, snapshot.generatedAt, downloadedAt]
@@ -124,6 +133,20 @@ export class SqliteSnapshotStore implements SnapshotStore {
     }));
   }
 
+  async listAreas(projectId: string): Promise<Area[]> {
+    await this.ready();
+    const rows = await this.database.query(
+      'select id, project_id, name from snapshot_area where project_id = ? order by name', [projectId]
+    );
+    return rows.map((row) => ({
+      id: String(row.id),
+      projectId: String(row.project_id),
+      name: String(row.name),
+      // A snapshot holds active areas only.
+      active: true
+    }));
+  }
+
   /** Creates the tables once per store. A failed attempt is forgotten, so the next call tries again. */
   private ready(): Promise<void> {
     this.schemaReady ??= this.database
@@ -134,4 +157,12 @@ export class SqliteSnapshotStore implements SnapshotStore {
       });
     return this.schemaReady;
   }
+}
+
+/** One insert per area in the snapshot. A register that predates areas sends none. */
+function areaInserts(snapshot: RegisterSnapshot): SqlStatement[] {
+  return snapshot.projects.flatMap((project) => (project.areas ?? []).map((area) => ({
+    sql: 'insert into snapshot_area (id, project_id, name) values (?, ?, ?)',
+    params: [area.id, project.id, area.name]
+  })));
 }

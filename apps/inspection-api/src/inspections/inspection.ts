@@ -37,6 +37,11 @@ export interface Inspection {
   projectName: string;
   systemId: string;
   system: SystemSnapshot;
+  /** The level or area of the building the record is in, when one was chosen. */
+  areaId: string | null;
+  /** Copied from the register when the area was set. Later renames do not change this copy. */
+  areaName: string | null;
+  /** The detail within the area, or the whole location when no area was chosen. */
   location: string;
   notes: string;
   status: InspectionStatus;

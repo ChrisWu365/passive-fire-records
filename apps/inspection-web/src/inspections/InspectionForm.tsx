@@ -2,6 +2,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { useApi } from '../api/api-context';
 import {
   STATUSES,
+  type Area,
   type FirestopSystem,
   type Inspection,
   type InspectionInput,
@@ -21,7 +22,7 @@ import { AiDraftNote } from './AiDraftNote';
 import { ObservationsEditor } from './ObservationsEditor';
 import { PendingPhotos } from './PendingPhotos';
 import { PhotoSection } from './PhotoSection';
-import { projectOptions, systemOptions } from './reference-options';
+import { areaOptions, projectOptions, systemOptions } from './reference-options';
 import { SystemDetails } from './SystemDetails';
 
 export interface InspectionFormProps {
@@ -52,6 +53,7 @@ const AI_AFTER_SYNC = 'The AI draft will be requested when this record syncs.';
 const EXISTING_NEEDS_CONNECTION =
   'You are offline. A record that is already on the server can be changed only while online.';
 const TOO_MANY_PHOTOS = `A record can hold at most ${MAX_PHOTOS} photos.`;
+const NO_AREA = '';
 const REFERENCE_NOT_LOADED = 'The chosen project or system is not available on this device. Choose them again.';
 
 const EMPTY_INPUT: InspectionInput = {
@@ -70,8 +72,8 @@ function inputFrom(record: Inspection): InspectionInput {
 }
 
 /**
- * The inspection record dialog: project and firestop system pickers fed by the register, the record's
- * fields, observations, photos, and the AI draft. It reads and writes through useApi().
+ * The inspection record dialog: project, firestop system and area pickers fed by the register, the
+ * record's fields, observations, photos, and the AI draft. It reads and writes through useApi().
  */
 export function InspectionForm(props: InspectionFormProps) {
   const { initial, canEdit, onClose, onSaved, capturedBy, onQueued } = props;
@@ -92,6 +94,9 @@ export function InspectionForm(props: InspectionFormProps) {
   const [form, setForm] = useState<InspectionInput>(initial ? inputFrom(initial) : EMPTY_INPUT);
   const [projects, setProjects] = useState<Project[]>([]);
   const [systems, setSystems] = useState<FirestopSystem[]>([]);
+  const [areas, setAreas] = useState<Area[]>([]);
+  /** The chosen area's id, or NO_AREA. Kept apart from the form so that "no area" is sent as no field. */
+  const [areaId, setAreaId] = useState(initial?.areaId ?? NO_AREA);
   const [aiInstruction, setAiInstruction] = useState(DEFAULT_AI_INSTRUCTION);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -136,9 +141,31 @@ export function InspectionForm(props: InspectionFormProps) {
     return () => { cancelled = true; };
   }, [reference, projectId]);
 
+  useEffect(() => {
+    setAreas([]);
+    if (!projectId) return undefined;
+    let cancelled = false;
+    reference.listAreas(projectId)
+      .then((loaded) => {
+        if (cancelled) return;
+        setAreas(loaded.items);
+        noteSource(loaded.source);
+      })
+      .catch((failure: unknown) => {
+        if (!cancelled) setError(`The areas could not be loaded. ${messageOf(failure, '')}`.trim());
+      });
+    return () => { cancelled = true; };
+  }, [reference, projectId]);
+
   const patch = (change: Partial<InspectionInput>) => setForm((current) => ({ ...current, ...change }));
   const keepsStoredReference = record !== null
     && record.projectId === form.projectId && record.systemId === form.systemId;
+  /** The record's own copy of its area's name, while it still refers to that area of that project. */
+  const storedAreaName = record !== null && record.projectId === form.projectId && record.areaId === areaId
+    ? record.areaName ?? undefined
+    : undefined;
+  /** What is sent to the server: the form, with the area only when one is chosen. */
+  const input: InspectionInput = areaId ? { ...form, areaId } : form;
   const shownSystem = systemToShow(form.systemId, systems, keepsStoredReference ? record.system : undefined);
   /** A new record can be kept on the device when there is a device queue and we know who is capturing. */
   const canCapture = record === null && queue !== null && capturedBy !== undefined;
@@ -175,6 +202,8 @@ export function InspectionForm(props: InspectionFormProps) {
       projectName: project.name,
       systemId: form.systemId,
       system: snapshotOf(system),
+      areaId: areaId || null,
+      areaName: areas.find((item) => item.id === areaId)?.name ?? null,
       location: form.location,
       notes: form.notes,
       status: form.status,
@@ -204,7 +233,7 @@ export function InspectionForm(props: InspectionFormProps) {
       }
       let saved: Inspection;
       try {
-        saved = record ? await api.inspections.update(record.id, form) : await api.inspections.create(form);
+        saved = record ? await api.inspections.update(record.id, input) : await api.inspections.create(input);
       } catch (failure) {
         // The connection dropped as the record was saved: keep it on the device instead of losing it.
         // A record the server answered and refused is a different matter, and is shown as the error it is.
@@ -214,6 +243,7 @@ export function InspectionForm(props: InspectionFormProps) {
       }
       setRecord(saved);
       setForm(inputFrom(saved));
+      setAreaId(saved.areaId ?? NO_AREA);
       onSaved(saved);
       return 'Saved';
     }, 'The inspection could not be saved');
@@ -297,7 +327,10 @@ export function InspectionForm(props: InspectionFormProps) {
                 id={id}
                 disabled={!canEdit}
                 value={form.projectId}
-                onChange={(event) => patch({ projectId: event.target.value, systemId: '' })}
+                onChange={(event) => {
+                  patch({ projectId: event.target.value, systemId: '' });
+                  setAreaId(NO_AREA);
+                }}
               >
                 <option value="">Select a project…</option>
                 {projectOptions(projects, form.projectId, record?.projectName).map((option) => (
@@ -325,6 +358,21 @@ export function InspectionForm(props: InspectionFormProps) {
         {shownSystem && <SystemDetails system={shownSystem} />}
 
         <div className="form-grid">
+          <Field label="Level / area">
+            {({ id }) => (
+              <select
+                id={id}
+                disabled={!canEdit || !form.projectId}
+                value={areaId}
+                onChange={(event) => setAreaId(event.target.value)}
+              >
+                <option value={NO_AREA}>No area</option>
+                {areaOptions(areas, areaId, storedAreaName).map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            )}
+          </Field>
           <Field label="Location">
             {({ id }) => (
               <input
@@ -335,6 +383,8 @@ export function InspectionForm(props: InspectionFormProps) {
               />
             )}
           </Field>
+        </div>
+        <div className="form-grid">
           <Field label="Status">
             {({ id }) => (
               <select

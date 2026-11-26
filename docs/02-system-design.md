@@ -67,6 +67,10 @@ Kubernetes resources are named `register-api`, and its root package is `com.chri
 | POST | `/api/register/projects/{id}/systems` | ADMIN | Add a system |
 | GET | `/api/register/projects/{id}/systems/{systemId}` | any signed-in | Read one; used by the inspection service |
 | PUT | `/api/register/projects/{id}/systems/{systemId}` | ADMIN | Update, including `active` |
+| GET | `/api/register/projects/{id}/areas` | any signed-in | List a project's levels and areas |
+| POST | `/api/register/projects/{id}/areas` | ADMIN | Add an area; its name is unique within the project |
+| GET | `/api/register/projects/{id}/areas/{areaId}` | any signed-in | Read one; used by the inspection service |
+| PUT | `/api/register/projects/{id}/areas/{areaId}` | ADMIN | Rename, or change `active` |
 | GET | `/api/register/snapshot` | any signed-in | All active projects with their active systems, plus `generatedAt`; used for offline download |
 
 There is no DELETE endpoint; a DELETE request returns 405.
@@ -110,7 +114,7 @@ so several instances can start together. There is no seed record.
 
 | Table | Columns |
 | --- | --- |
-| `inspection` | `id` uuid PK, `client_id` uuid unique nullable, `project_id`, `project_name`, `system_id`, `system_code`, `system_substrate`, `system_service_type`, `system_fire_rating`, `system_materials`, `system_method`, `location`, `notes`, `status`, `inspector_id`, `inspector_name`, `ai_instruction`, `ai_summary`, `ai_status` (`NONE`, `DONE`, `FAILED`), `captured_at`, `created_at`, `updated_at` |
+| `inspection` | `id` uuid PK, `client_id` uuid unique nullable, `project_id`, `project_name`, `system_id`, `system_code`, `system_substrate`, `system_service_type`, `system_fire_rating`, `system_materials`, `system_method`, `area_id` nullable, `area_name` nullable, `location`, `notes`, `status`, `inspector_id`, `inspector_name`, `ai_instruction`, `ai_summary`, `ai_status` (`NONE`, `DONE`, `FAILED`), `captured_at`, `created_at`, `updated_at` |
 | `observation` | `inspection_id` FK, `id`, `position`, `description`, `severity`, `remedial_action`; primary key (`inspection_id`, `id`) |
 | `photo` | `inspection_id` FK, `position`, `file_path`; primary key (`inspection_id`, `position`) |
 
@@ -140,7 +144,9 @@ record was stored. Demo users stay in code.
   a timeout (3 seconds by default, `REGISTER_TIMEOUT_MS`):
   `GET {REGISTER_SERVICE_URL}/api/register/projects/{projectId}` and
   `GET .../projects/{projectId}/systems/{systemId}`. The project is fetched for
-  its name and its active flag.
+  its name and its active flag. When the record names an area, a third request,
+  `GET .../projects/{projectId}/areas/{areaId}`, is made with them; an update asks
+  only about what changed.
 - Both 200 and active: continue and copy the project name and system details.
 - 404 or inactive: respond 422 with the reason.
 - Timeout, connection error, any other status, or an unreadable body: respond
@@ -231,9 +237,9 @@ was downloaded.
 
 | Table | Purpose |
 | --- | --- |
-| `snapshot_project`, `snapshot_system` | The last downloaded snapshot: active projects and their active systems |
+| `snapshot_project`, `snapshot_system`, `snapshot_area` | The last downloaded snapshot: active projects with their active systems and areas |
 | `snapshot_meta` | One row: when the register generated the snapshot, and when the device downloaded it |
-| `queued_inspection` | `client_id` PK, the form fields, the project name and system copy, `ai_instruction`, `captured_at`, who captured it, `state` (`PENDING`, `FAILED`, `SYNCED`), `server_id`, `photo_count`, `ai_outcome`, `last_error` |
+| `queued_inspection` | `client_id` PK, the form fields, the project name and system copy, the area's id and name when one was chosen, `ai_instruction`, `captured_at`, who captured it, `state` (`PENDING`, `FAILED`, `SYNCED`), `server_id`, `photo_count`, `ai_outcome`, `last_error` |
 | `queued_photo` | `client_id`, `position`, `file_name`, `mime_type`, image bytes; primary key (`client_id`, `position`) |
 
 **Download.** `GET /api/register/snapshot`, check that the answer is shaped like

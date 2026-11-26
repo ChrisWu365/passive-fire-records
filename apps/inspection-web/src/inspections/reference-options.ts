@@ -1,4 +1,4 @@
-import type { FirestopSystem, Project, SystemSnapshot } from '../api/types';
+import type { Area, FirestopSystem, Project, SystemSnapshot } from '../api/types';
 
 export interface PickerOption {
   value: string;
@@ -48,4 +48,18 @@ export function systemOptions(
   const known = systems.find((system) => system.id === selectedId);
   if (known) return [{ value: selectedId, label: systemLabel(known) + INACTIVE_SUFFIX }, ...options];
   return stored ? [{ value: selectedId, label: systemLabel(stored) }, ...options] : options;
+}
+
+/**
+ * The areas a record may be given: the project's active ones, plus the record's current area when it is
+ * no longer offered, for the same reason as in projectOptions.
+ *
+ * @param storedName the area name kept on the record, used when the register does not know the area
+ */
+export function areaOptions(areas: Area[], selectedId: string, storedName: string | undefined): PickerOption[] {
+  const options = areas.filter((area) => area.active).map((area) => ({ value: area.id, label: area.name }));
+  if (!selectedId || options.some((option) => option.value === selectedId)) return options;
+  const known = areas.find((area) => area.id === selectedId);
+  if (known) return [{ value: selectedId, label: known.name + INACTIVE_SUFFIX }, ...options];
+  return storedName ? [{ value: selectedId, label: storedName }, ...options] : options;
 }

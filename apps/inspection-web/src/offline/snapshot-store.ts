@@ -1,4 +1,4 @@
-import type { FirestopSystem, Project } from '../api/types';
+import type { Area, FirestopSystem, Project } from '../api/types';
 import type { RegisterSnapshot, SnapshotInfo } from './snapshot';
 
 /**
@@ -22,4 +22,7 @@ export interface SnapshotStore {
 
   /** The stored systems of one project, ordered by code; empty when the project is not stored. */
   listSystems(projectId: string): Promise<FirestopSystem[]>;
+
+  /** The stored areas of one project, ordered by name; empty when the project is not stored. */
+  listAreas(projectId: string): Promise<Area[]>;
 }

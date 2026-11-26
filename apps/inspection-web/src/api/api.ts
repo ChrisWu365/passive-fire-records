@@ -1,5 +1,7 @@
 import type {
   AiDraftResult,
+  Area,
+  AreaInput,
   FirestopSystem,
   FirestopSystemInput,
   Inspection,
@@ -24,6 +26,10 @@ export interface RegisterApi {
   listSystems(projectId: string): Promise<FirestopSystem[]>;
   createSystem(projectId: string, input: FirestopSystemInput): Promise<FirestopSystem>;
   updateSystem(projectId: string, systemId: string, input: FirestopSystemInput): Promise<FirestopSystem>;
+  /** Every area of the project, active or not, ordered by name. */
+  listAreas(projectId: string): Promise<Area[]>;
+  createArea(projectId: string, input: AreaInput): Promise<Area>;
+  updateArea(projectId: string, areaId: string, input: AreaInput): Promise<Area>;
 }
 
 /** The inspection service: records, photos and AI drafts. */

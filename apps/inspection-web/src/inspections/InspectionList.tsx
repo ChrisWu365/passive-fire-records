@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { STATUSES, type Inspection, type Status } from '../api/types';
 import { Pager } from '../components/Pager';
+import { placeOf } from './place';
 
 interface InspectionListProps {
   inspections: Inspection[];
@@ -21,12 +22,12 @@ function statusLabel(status: Status): string {
 
 function matches(inspection: Inspection, query: string, status: StatusFilter): boolean {
   if (status && inspection.status !== status) return false;
-  return `${inspection.projectName} ${inspection.location}`.toLowerCase().includes(query);
+  return `${inspection.projectName} ${placeOf(inspection)}`.toLowerCase().includes(query);
 }
 
 /**
  * The summary tiles and the table of records, in the order given (most recently updated first). The table
- * can be searched, filtered by status and is shown a page at a time; the tiles always count every record.
+ * can be searched (by project, area or location), filtered by status and is shown a page at a time; the tiles always count every record.
  */
 export function InspectionList({ inspections, loading, onOpen }: InspectionListProps) {
   const [search, setSearch] = useState('');
@@ -93,7 +94,7 @@ export function InspectionList({ inspections, loading, onOpen }: InspectionListP
                 <tr key={inspection.id}>
                   <td>
                     <strong>{inspection.projectName}</strong>
-                    <span className="subline">{inspection.location}</span>
+                    <span className="subline">{placeOf(inspection)}</span>
                   </td>
                   <td><StatusBadge status={inspection.status} /></td>
                   <td>{inspection.inspectorName}</td>

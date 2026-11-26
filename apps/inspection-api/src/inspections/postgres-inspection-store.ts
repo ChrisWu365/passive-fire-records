@@ -17,6 +17,8 @@ interface InspectionRow {
   system_fire_rating: string;
   system_materials: string;
   system_method: string;
+  area_id: string | null;
+  area_name: string | null;
   location: string;
   notes: string;
   status: InspectionStatus;
@@ -85,12 +87,12 @@ export class PostgresInspectionStore implements InspectionStore {
            (id, client_id, project_id, project_name, system_id, system_code, system_substrate,
             system_service_type, system_fire_rating, system_materials, system_method, location, notes,
             status, inspector_id, inspector_name, ai_instruction, ai_summary, ai_status, captured_at,
-            created_at, updated_at)
+            area_id, area_name, created_at, updated_at)
          select $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                stamp.now, stamp.now
+                $21, $22, stamp.now, stamp.now
          from (select clock_timestamp() as now) stamp
          on conflict (client_id) do nothing`,
-        [id, input.clientId, ...recordValues(input), input.capturedAt]
+        [id, input.clientId, ...recordValues(input), input.capturedAt, input.areaId, input.areaName]
       );
       if (inserted.rowCount === 0) {
         return { inspection: await this.requireByClientId(client, input.clientId), created: false };
@@ -107,9 +109,10 @@ export class PostgresInspectionStore implements InspectionStore {
            project_id = $2, project_name = $3, system_id = $4, system_code = $5, system_substrate = $6,
            system_service_type = $7, system_fire_rating = $8, system_materials = $9, system_method = $10,
            location = $11, notes = $12, status = $13, inspector_id = $14, inspector_name = $15,
-           ai_instruction = $16, ai_summary = $17, ai_status = $18, updated_at = clock_timestamp()
+           ai_instruction = $16, ai_summary = $17, ai_status = $18, area_id = $19, area_name = $20,
+           updated_at = clock_timestamp()
          where id = $1`,
-        [inspection.id, ...recordValues(inspection)]
+        [inspection.id, ...recordValues(inspection), inspection.areaId, inspection.areaName]
       );
       if (updated.rowCount === 0) return undefined;
       await client.query(`delete from ${this.schema}.observation where inspection_id = $1`, [inspection.id]);
@@ -206,6 +209,8 @@ function toInspection(row: InspectionRow): Inspection {
       materials: row.system_materials,
       installationMethod: row.system_method
     },
+    areaId: row.area_id,
+    areaName: row.area_name,
     location: row.location,
     notes: row.notes,
     status: row.status,

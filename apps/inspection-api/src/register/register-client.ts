@@ -17,9 +17,17 @@ export interface RegisterSystem {
   active: boolean;
 }
 
+/** A level or area of a project's building, as the register holds it. */
+export interface RegisterArea {
+  id: string;
+  projectId: string;
+  name: string;
+  active: boolean;
+}
+
 /**
  * Thrown when the register service cannot give an answer: it is unreachable, too slow, or failing.
- * It never means "not found"; a missing project or system is a normal answer.
+ * It never means "not found"; a missing project, system or area is a normal answer.
  */
 export class RegisterUnavailableError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -44,4 +52,10 @@ export interface RegisterClient {
    * @throws RegisterUnavailableError when the register cannot answer
    */
   findSystem(projectId: string, systemId: string, bearerToken: string): Promise<RegisterSystem | undefined>;
+
+  /**
+   * @returns the area, or undefined when the project has no area with this id
+   * @throws RegisterUnavailableError when the register cannot answer
+   */
+  findArea(projectId: string, areaId: string, bearerToken: string): Promise<RegisterArea | undefined>;
 }

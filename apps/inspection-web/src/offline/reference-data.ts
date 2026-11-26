@@ -1,5 +1,5 @@
 import type { RegisterApi } from '../api/api';
-import type { FirestopSystem, Project } from '../api/types';
+import type { Area, FirestopSystem, Project } from '../api/types';
 import { isUnreachable } from './reachability';
 import type { SnapshotStore } from './snapshot-store';
 
@@ -16,7 +16,7 @@ export interface ReferenceResult<T> {
 }
 
 /**
- * Projects and systems for the pickers on a record. Reads the register when it can be reached, and the
+ * Projects, systems and areas for the pickers on a record. Reads the register when it can be reached, and the
  * device's downloaded copy when it cannot.
  */
 export interface ReferenceData {
@@ -28,6 +28,9 @@ export interface ReferenceData {
 
   /** Same rules as listProjects, for one project's systems. */
   listSystems(projectId: string): Promise<ReferenceResult<FirestopSystem>>;
+
+  /** Same rules as listProjects, for one project's areas. */
+  listAreas(projectId: string): Promise<ReferenceResult<Area>>;
 }
 
 /** The register cannot be reached and this device holds no downloaded copy to fall back on. */
@@ -44,7 +47,8 @@ const LIVE: ReferenceSource = { kind: 'live' };
 export function createLiveReferenceData(register: RegisterApi): ReferenceData {
   return {
     listProjects: async () => ({ items: await register.listProjects(), source: LIVE }),
-    listSystems: async (projectId) => ({ items: await register.listSystems(projectId), source: LIVE })
+    listSystems: async (projectId) => ({ items: await register.listSystems(projectId), source: LIVE }),
+    listAreas: async (projectId) => ({ items: await register.listAreas(projectId), source: LIVE })
   };
 }
 
@@ -74,6 +78,8 @@ export function createOfflineReferenceData(register: RegisterApi, store: Snapsho
   return {
     listProjects: () => liveOrDownloaded(() => live.listProjects(), () => store.listProjects()),
     listSystems: (projectId) =>
-      liveOrDownloaded(() => live.listSystems(projectId), () => store.listSystems(projectId))
+      liveOrDownloaded(() => live.listSystems(projectId), () => store.listSystems(projectId)),
+    listAreas: (projectId) =>
+      liveOrDownloaded(() => live.listAreas(projectId), () => store.listAreas(projectId))
   };
 }

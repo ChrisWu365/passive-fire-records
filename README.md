@@ -39,8 +39,8 @@ Actions pipeline builds, tests and deploys all three.
 
 | Who | What they do |
 | --- | --- |
-| Admin (office) | Sets up projects and each project's approved firestop systems: a short code, the wall or floor type, the service passing through, the fire rating, the materials and the method |
-| Installer (site) | Downloads the register to the device, then records each sealed opening: project, location, system code, photos, notes and an instruction for the AI |
+| Admin (office) | Sets up projects and each project's approved firestop systems: a short code, the wall or floor type, the service passing through, the fire rating, the materials and the method; and each project's levels and areas |
+| Installer (site) | Downloads the register to the device, then records each sealed opening: project, level or area, location, system code, photos, notes and an instruction for the AI |
 | Viewer | Reads records; changes nothing |
 
 The workflow:
@@ -57,7 +57,9 @@ Rules worth knowing:
 - A record must use a system from its project's approved list. The inspection service checks this with the
   register service, and the record keeps its own copy of the system's details, so later edits to the
   register never change existing records.
-- Projects and systems are deactivated, never deleted.
+- A record may name one of its project's levels or areas. It keeps its own copy of the area's name, as
+  it does for the system.
+- Projects, systems and areas are deactivated, never deleted.
 - If the server refuses a record at sync time (for example its system was deactivated meanwhile), the
   record stays on the device as **Sync failed** with the reason, until the installer retries or discards it.
 - Sending is safe to interrupt: a record interrupted part-way is never created twice, and no photo is
@@ -129,7 +131,7 @@ Then, in Chrome or Edge at http://localhost:4173:
 3. Switch the network off (DevTools → Network → Offline, or airplane mode) and reload. The app still opens
    and shows **Offline**.
 4. Press **+ New inspection**. Pick the project and `SYS-05` from the list (they come from the device),
-   type a location, attach a photo, write an AI instruction, and save. The record appears under
+   pick a level or area if the project has any, type a location, attach a photo, write an AI instruction, and save. The record appears under
    **On this device** as **Pending sync**.
 5. Switch the network back on. The record turns **Synced**, appears in the list, and opens with its photo
    and an AI draft labelled as unverified.
@@ -145,7 +147,7 @@ Deliberate cuts, so that the flow stays small and can be run with one photo of a
 | --- | --- |
 | Each opening gets a numbered physical label before it is photographed | No label numbers; a record has a location and a system code |
 | Photos are taken before, during and at completion | Plain photos with no stage |
-| Each opening is marked on a floor plan | Free-text location |
+| Each opening is marked on a floor plan | A level or area picked from the project's list, plus a free-text detail |
 | Work is assigned by level and area | No work areas or assignment |
 | A supervisor reviews records and sends defects back for rework | No review loop; a status field only |
 | A register is exported at handover | No export |
@@ -356,7 +358,10 @@ Secrets never go in the web app or in Git. `.env` files are ignored by Git; `.en
 | GET | `/projects/{id}/systems` | any | List a project's systems |
 | POST | `/projects/{id}/systems` | admin | Add a system |
 | GET, PUT | `/projects/{id}/systems/{systemId}` | any, admin | Read, update or deactivate a system |
-| GET | `/snapshot` | any | Active projects with their active systems, for offline download |
+| GET | `/projects/{id}/areas` | any | List a project's levels and areas |
+| POST | `/projects/{id}/areas` | admin | Add an area |
+| GET, PUT | `/projects/{id}/areas/{areaId}` | any, admin | Read, rename or deactivate an area |
+| GET | `/snapshot` | any | Active projects with their active systems and areas, for offline download |
 
 There is no DELETE. Errors are `{ "error": "..." }`; validation errors add a `fields` object.
 

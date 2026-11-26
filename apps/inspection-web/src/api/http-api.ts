@@ -15,6 +15,8 @@ export function createHttpApi(options: HttpApiOptions): Api {
   const project = (projectId: string) => `${REGISTER}/projects/${encodeURIComponent(projectId)}`;
   const system = (projectId: string, systemId: string) =>
     `${project(projectId)}/systems/${encodeURIComponent(systemId)}`;
+  const area = (projectId: string, areaId: string) =>
+    `${project(projectId)}/areas/${encodeURIComponent(areaId)}`;
   const inspection = (id: string) => `${INSPECTIONS}/${encodeURIComponent(id)}`;
 
   return {
@@ -28,7 +30,10 @@ export function createHttpApi(options: HttpApiOptions): Api {
       updateProject: (projectId, input) => request('PUT', project(projectId), { body: input }),
       listSystems: (projectId) => request('GET', `${project(projectId)}/systems`),
       createSystem: (projectId, input) => request('POST', `${project(projectId)}/systems`, { body: input }),
-      updateSystem: (projectId, systemId, input) => request('PUT', system(projectId, systemId), { body: input })
+      updateSystem: (projectId, systemId, input) => request('PUT', system(projectId, systemId), { body: input }),
+      listAreas: (projectId) => request('GET', `${project(projectId)}/areas`),
+      createArea: (projectId, input) => request('POST', `${project(projectId)}/areas`, { body: input }),
+      updateArea: (projectId, areaId, input) => request('PUT', area(projectId, areaId), { body: input })
     },
     inspections: {
       list: () => request('GET', INSPECTIONS),

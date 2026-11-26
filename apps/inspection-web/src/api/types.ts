@@ -53,6 +53,20 @@ export interface FirestopSystemInput {
   active?: boolean;
 }
 
+/** A level or area of a project's building, such as "Level 3". */
+export interface Area {
+  id: string;
+  projectId: string;
+  name: string;
+  active: boolean;
+}
+
+export interface AreaInput {
+  name: string;
+  /** Left out, the server keeps the current value (true for a new area). */
+  active?: boolean;
+}
+
 export const STATUSES = ['DRAFT', 'IN_PROGRESS', 'ACTION_REQUIRED', 'COMPLETED'] as const;
 export type Status = (typeof STATUSES)[number];
 
@@ -86,6 +100,10 @@ export interface Inspection {
   projectName: string;
   systemId: string;
   system: SystemSnapshot;
+  /** The chosen level or area, when there is one. */
+  areaId: string | null;
+  /** The area's name as copied onto the record when it was stored. */
+  areaName: string | null;
   location: string;
   notes: string;
   status: Status;
@@ -105,6 +123,8 @@ export interface Inspection {
 export interface InspectionInput {
   projectId: string;
   systemId: string;
+  /** The chosen level or area. Left out, the record has none. */
+  areaId?: string;
   location: string;
   notes: string;
   status: Status;

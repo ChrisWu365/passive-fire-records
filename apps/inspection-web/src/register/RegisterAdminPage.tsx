@@ -6,6 +6,7 @@ import { OfflineNotice } from '../offline/OfflineNotice';
 import { useOffline } from '../offline/offline-context';
 import { isNetworkFailure } from '../offline/reachability';
 import { useOnline } from '../offline/use-online';
+import { AreaPanel } from './AreaPanel';
 import { ProjectDialog } from './ProjectDialog';
 import { ProjectPanel } from './ProjectPanel';
 import { SystemDialog } from './SystemDialog';
@@ -42,7 +43,7 @@ function systemInput(system: FirestopSystem, active: boolean): FirestopSystemInp
 
 /**
  * Admin screen for the register: the list of projects, and for the selected project its approved firestop
- * systems. Adding and editing happen in dialogs opened from each panel's heading. It reads and writes
+ * systems and its areas. Adding and editing happen in dialogs opened from each panel's heading. It reads and writes
  * through useApi().
  */
 export function RegisterAdminPage() {
@@ -162,44 +163,47 @@ export function RegisterAdminPage() {
           onSelect={setSelectedId}
           onNew={() => setDialog({ kind: 'new-project' })}
         />
-        <section className="panel register-panel">
-          {selected ? (
-            <>
-              <div className="panel-heading register-heading">
-                <h3>Approved systems for {selected.name}</h3>
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="button ghost"
-                    aria-label={`Edit project ${selected.code}`}
-                    onClick={() => setDialog({ kind: 'edit-project', project: selected })}
-                  >
-                    Edit project
-                  </button>
-                  <button
-                    type="button"
-                    className="button ghost"
-                    aria-label={`${selected.active ? 'Deactivate' : 'Reactivate'} project ${selected.code}`}
-                    onClick={() => void toggleProject(selected)}
-                  >
-                    {selected.active ? 'Deactivate project' : 'Reactivate project'}
-                  </button>
-                  <button type="button" className="button primary" onClick={() => setDialog({ kind: 'new-system' })}>
-                    New system
-                  </button>
+        <div className="register-main">
+          {selected && <AreaPanel project={selected} />}
+          <section className="panel register-panel">
+            {selected ? (
+              <>
+                <div className="panel-heading register-heading">
+                  <h3>Approved systems for {selected.name}</h3>
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="button ghost"
+                      aria-label={`Edit project ${selected.code}`}
+                      onClick={() => setDialog({ kind: 'edit-project', project: selected })}
+                    >
+                      Edit project
+                    </button>
+                    <button
+                      type="button"
+                      className="button ghost"
+                      aria-label={`${selected.active ? 'Deactivate' : 'Reactivate'} project ${selected.code}`}
+                      onClick={() => void toggleProject(selected)}
+                    >
+                      {selected.active ? 'Deactivate project' : 'Reactivate project'}
+                    </button>
+                    <button type="button" className="button primary" onClick={() => setDialog({ kind: 'new-system' })}>
+                      New system
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <ErrorAlert message={actionError} />
-              <SystemTable
-                systems={systems}
-                onEdit={(system) => setDialog({ kind: 'edit-system', system })}
-                onToggleActive={(system) => void toggleSystem(system)}
-              />
-            </>
-          ) : (
-            <p className="muted register-empty">Select a project to see its approved systems.</p>
-          )}
-        </section>
+                <ErrorAlert message={actionError} />
+                <SystemTable
+                  systems={systems}
+                  onEdit={(system) => setDialog({ kind: 'edit-system', system })}
+                  onToggleActive={(system) => void toggleSystem(system)}
+                />
+              </>
+            ) : (
+              <p className="muted register-empty">Select a project to see its approved systems.</p>
+            )}
+          </section>
+        </div>
       </div>
       {dialog.kind === 'new-project' && (
         <ProjectDialog editing={null} onSubmit={createProject} onClose={closeDialog} />

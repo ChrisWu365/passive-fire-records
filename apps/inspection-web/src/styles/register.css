@@ -31,3 +31,11 @@
 @media (max-width: 900px) {
   .register-layout { grid-template-columns: minmax(0, 1fr); }
 }
+
+/* The right-hand column: the selected project's systems, then its areas. */
+.register-main { display: grid; gap: 18px; min-width: 0; }
+.area-list { list-style: none; margin: 0; padding: 0; }
+.area-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 12px 24px; font-size: .9rem; }
+.area-list li + li { border-top: 1px solid var(--rule); }
+.area-name { flex: 1; min-width: 160px; font-weight: 600; }
+.area-actions { display: flex; gap: 6px; }

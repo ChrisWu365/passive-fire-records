@@ -291,6 +291,10 @@ export const openApiDocument = {
         properties: {
           projectId: { type: 'string', format: 'uuid' },
           systemId: { type: 'string', format: 'uuid' },
+          areaId: {
+            type: 'string', format: 'uuid', nullable: true,
+            description: 'An active area of the project. Left out or null, the record has no area'
+          },
           location: { type: 'string', maxLength: 200 },
           notes: { type: 'string', maxLength: 5000 },
           status: { type: 'string', enum: ['DRAFT', 'IN_PROGRESS', 'ACTION_REQUIRED', 'COMPLETED'] },
@@ -308,6 +312,8 @@ export const openApiDocument = {
           projectName: { type: 'string' },
           systemId: { type: 'string', format: 'uuid' },
           system: { $ref: '#/components/schemas/SystemSnapshot' },
+          areaId: { type: 'string', format: 'uuid', nullable: true },
+          areaName: { type: 'string', nullable: true, description: 'Copied from the register when the area was set' },
           location: { type: 'string' },
           notes: { type: 'string' },
           status: { type: 'string', enum: ['DRAFT', 'IN_PROGRESS', 'ACTION_REQUIRED', 'COMPLETED'] },

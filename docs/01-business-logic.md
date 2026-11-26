@@ -49,7 +49,7 @@ The existing role names stay. `INSPECTOR` is the installer.
    "Download for offline". Projects and their systems lists are copied to the
    device.
 3. **On site, offline.** For each opening they seal, the installer creates a
-   record: chooses the project, types the location, picks the system code from
+   record: chooses the project, picks the level or area, types the location, picks the system code from
    the downloaded list, attaches one or more photos, writes notes, and writes
    the instruction for the AI. The record is saved on the device and shown as
    "Pending sync".
@@ -122,7 +122,7 @@ photo of anything. The README should list them.
 | --- | --- |
 | Each opening gets a numbered physical label before it is photographed | No label numbers; the record has a location and a system code |
 | Photos are taken before, during and at completion | Plain photos with no stage |
-| Each opening is marked on a floor plan | Free-text location |
+| Each opening is marked on a floor plan | A level or area picked from the project's list, plus a free-text detail |
 | Work is assigned by level and area, driven by the main contractor's programme | No work areas or assignment |
 | The subcontractor's supervisor checks records; defects go back for rework | No review or defect loop; the status field only |
 | A register is exported at handover, with a PS3 producer statement | No export |

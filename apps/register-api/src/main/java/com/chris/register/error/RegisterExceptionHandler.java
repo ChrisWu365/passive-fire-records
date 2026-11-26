@@ -43,6 +43,12 @@ public class RegisterExceptionHandler {
         return ApiError.of(exception.getMessage());
     }
 
+    @ExceptionHandler(DuplicateNameException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ApiError handleDuplicateName(DuplicateNameException exception) {
+        return ApiError.of(exception.getMessage());
+    }
+
     /**
      * Two requests can pass the uniqueness check at the same moment; the database constraint then rejects one.
      */

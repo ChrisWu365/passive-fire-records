@@ -18,13 +18,15 @@ export const REGISTER_REJECTIONS = {
   PROJECT_NOT_FOUND: 'Project not found',
   PROJECT_INACTIVE: 'Project is inactive',
   SYSTEM_NOT_FOUND: 'Firestop system not found in this project',
-  SYSTEM_INACTIVE: 'Firestop system is inactive'
+  SYSTEM_INACTIVE: 'Firestop system is inactive',
+  AREA_NOT_FOUND: 'Area not found in this project',
+  AREA_INACTIVE: 'Area is inactive'
 } as const;
 
 export type RegisterRejection = (typeof REGISTER_REJECTIONS)[keyof typeof REGISTER_REJECTIONS];
 
 /**
- * The register answered, and its answer means the record cannot use this project or system.
+ * The register answered, and its answer means the record cannot use this project, system or area.
  * Answered with 422 and the reason.
  */
 export class RegisterRejectionError extends Error {

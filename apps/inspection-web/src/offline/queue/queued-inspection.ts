@@ -23,6 +23,10 @@ export interface QueuedInspectionDraft {
   projectName: string;
   systemId: string;
   system: SystemSnapshot;
+  /** The chosen level or area, or null for none. */
+  areaId: string | null;
+  /** Kept for the same reason as projectName. */
+  areaName: string | null;
   location: string;
   notes: string;
   status: Status;
